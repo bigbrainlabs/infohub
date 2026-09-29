@@ -4,8 +4,13 @@
  * Plain vanilla-JS custom element - deliberately no Lit/build step (no
  * Node bundler or browser was available to test one from where this was
  * written). Reuses Home Assistant's own globally-registered elements
- * (<ha-card>, <ha-entity-picker>) instead of building pickers from
- * scratch. Talks to the backend exclusively through the websocket
+ * (<ha-card>) where that's straightforward. Entity selection uses a
+ * plain <select> over hass.states rather than HA's <ha-entity-picker> -
+ * that component lives in a JS chunk the frontend only lazy-loads once
+ * something else (e.g. a Lovelace card editor) has already triggered
+ * it, which navigating straight to this panel never does; it silently
+ * renders as an inert, empty tag otherwise (see git history for the
+ * bug this caused). Talks to the backend exclusively through the websocket
  * commands that homeassistant.helpers.collection.DictStorageCollectionWebsocket
  * auto-generates for the "infohub/panel" collection (see panels.py):
  * infohub/panel/list, /subscribe, /create, /update ({panel_id, ...}),
@@ -46,6 +51,7 @@ const STRINGS = {
     colLabel: "Label",
     colUnit: "Einheit",
     colWeather: "Wetter",
+    selectEntityPlaceholder: "— Entity wählen —",
     placeholderLabel: "Label",
     placeholderUnit: "Einheit",
     weatherCheckbox: "Wetter",
@@ -79,6 +85,7 @@ const STRINGS = {
     colLabel: "Label",
     colUnit: "Unit",
     colWeather: "Weather",
+    selectEntityPlaceholder: "— Select entity —",
     placeholderLabel: "Label",
     placeholderUnit: "Unit",
     weatherCheckbox: "Weather",
@@ -466,7 +473,6 @@ class InfohubPanel extends HTMLElement {
         }
         .entity-row { font-size: 14px; border-bottom: 1px solid var(--divider-color); padding-bottom: 6px; }
         .entity-row-header { font-size: 12px; margin-top: 16px; }
-        .entity-row ha-entity-picker { min-width: 0; }
         input[type="text"], input[type="number"], select {
           padding: 6px;
           border: 1px solid var(--divider-color);
@@ -623,6 +629,22 @@ class InfohubPanel extends HTMLElement {
     });
 
     this._renderWidgetEditor(panel);
+  }
+
+  // Plain <select> of all known entity_ids, instead of <ha-entity-picker>:
+  // that component lives in a lazily-loaded HA frontend chunk that's only
+  // fetched once something else (e.g. a Lovelace card editor) triggers it
+  // first - navigating straight to this sidebar panel never does, leaving
+  // the tag undefined/blank. hass.states is always available though, and
+  // a native <select> is exactly the dropdown that was asked for anyway.
+  _entitySelectOptions(selectedValue) {
+    const ids = Object.keys((this._hass && this._hass.states) || {}).sort();
+    return ids
+      .map(
+        (id) =>
+          `<option value="${_escapeAttr(id)}" ${id === selectedValue ? "selected" : ""}>${_escape(id)}</option>`
+      )
+      .join("");
   }
 
   async _populateDeviceSelect(panel) {
@@ -852,7 +874,7 @@ class InfohubPanel extends HTMLElement {
             .map(
               ({ e, i }) => `
             <div class="entity-row">
-              <ha-entity-picker class="inline-entity-picker" data-index="${i}"></ha-entity-picker>
+              <select class="inline-entity-picker" data-index="${i}">${this._entitySelectOptions(e.entity_id)}</select>
               <span>${_escape(e.label || "")}</span>
               <span>${_escape(e.unit || "")}</span>
               ${showWeatherCol ? `<span>${e.type === "weather" ? "✓" : ""}</span>` : "<span></span>"}
@@ -862,7 +884,7 @@ class InfohubPanel extends HTMLElement {
             .join("")}
         </div>
         <div class="entity-add-row">
-          <ha-entity-picker id="widget-entity-picker"></ha-entity-picker>
+          <select id="widget-entity-picker"><option value="">${t.selectEntityPlaceholder}</option>${this._entitySelectOptions(null)}</select>
           <input type="text" id="widget-entity-label" placeholder="${t.placeholderLabel}" />
           <input type="text" id="widget-entity-unit" placeholder="${t.placeholderUnit}" />
           ${showWeatherCol ? `<label class="hint"><input type="checkbox" id="widget-entity-weather" /> ${t.weatherCheckbox}</label>` : "<span></span>"}
@@ -893,16 +915,13 @@ class InfohubPanel extends HTMLElement {
       box.querySelectorAll(".inline-entity-picker").forEach((inlinePicker) => {
         const index = parseInt(inlinePicker.dataset.index, 10);
         const current = (panel.entities || [])[index];
-        inlinePicker.hass = this._hass;
-        if (current) inlinePicker.value = current.entity_id;
-        inlinePicker.addEventListener("value-changed", (ev) => {
-          const newEntityId = ev.detail.value;
+        inlinePicker.addEventListener("change", () => {
+          const newEntityId = inlinePicker.value;
           if (!newEntityId || (current && newEntityId === current.entity_id)) return;
           this._updateEntity(panel.id, index, { entity_id: newEntityId });
         });
       });
       const picker = box.querySelector("#widget-entity-picker");
-      picker.hass = this._hass;
       box.querySelector("#widget-entity-add").addEventListener("click", () => {
         const entityId = picker.value;
         if (!entityId) return;
