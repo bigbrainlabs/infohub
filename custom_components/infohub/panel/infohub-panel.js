@@ -113,6 +113,7 @@ const WIDGET_GROUPS = {
   waste_next: "abfall",
   indoor_climate: "raumklima",
   calendar_month: "kalender",
+  value_tile: "custom",
 };
 
 // Mirrors custom_components/infohub/widgets.py's WIDGET_CATALOG. Option
@@ -152,6 +153,15 @@ const WIDGET_CATALOG = {
     default_size: [9, 14],
     options: { months_shown: { type: "number", default: 2, min: 1, max: 2 } },
   },
+  // Generic widget: shows one entity picked from the panel's "custom"
+  // group (see WIDGET_GROUPS) via its own "entity_id" option, instead of
+  // reading a whole fixed group like the other types - the widget
+  // gallery can grow to "any entity" without a new hardcoded type.
+  value_tile: {
+    label: { de: "Info-Kachel", en: "Info Tile" },
+    default_size: [6, 4],
+    options: { entity_id: { type: "entity", default: "" } },
+  },
 };
 
 const OPTION_LABELS = {
@@ -160,6 +170,7 @@ const OPTION_LABELS = {
   show_scene: { de: "Himmelsszene anzeigen", en: "Show sky scene" },
   max_value: { de: "Maximalwert", en: "Max value" },
   months_shown: { de: "Angezeigte Monate", en: "Months shown" },
+  entity_id: { de: "Entity", en: "Entity" },
 };
 
 const GRID_COLS = 24;
@@ -481,15 +492,47 @@ class InfohubPanel extends HTMLElement {
           color: var(--primary-text-color);
         }
         .hint { color: var(--secondary-text-color); font-size: 13px; }
-        .widget-palette { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
-        .widget-palette button {
-          padding: 6px 10px;
+        .widget-palette { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+        .widget-palette-btn {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 4px;
+          width: 92px;
+          padding: 6px;
           border: 1px solid var(--divider-color);
-          border-radius: 6px;
+          border-radius: 8px;
           background: var(--card-background-color, #fff);
           color: var(--primary-text-color);
           cursor: pointer;
+          font-size: 11px;
         }
+        /* Rough CSS mockups, not pixel-accurate renders - just enough to
+           recognize a widget type before adding it. Plain text/emoji only,
+           no HA-only elements (ha-icon etc. are lazily loaded and would
+           render blank the same way ha-entity-picker did - see git log). */
+        .widget-preview {
+          width: 80px;
+          height: 52px;
+          border-radius: 6px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #fff;
+          font-size: 10px;
+          overflow: hidden;
+          background: #1a1a3a;
+        }
+        .widget-preview-clock .mock-text { font-family: monospace; font-size: 15px; letter-spacing: 1px; }
+        .widget-preview-weather_current { background: linear-gradient(180deg, #4a90d9, #1a1a3a); font-size: 18px; }
+        .widget-preview-power_gauge .mock-arc {
+          width: 34px; height: 34px; border-radius: 50%;
+          background: conic-gradient(#22c55e 0deg 250deg, #2d2d44 250deg 360deg);
+          display: flex; align-items: center; justify-content: center; font-size: 14px;
+        }
+        .widget-preview-calendar_month .mock-grid { display: grid; grid-template-columns: repeat(5, 7px); gap: 2px; }
+        .widget-preview-calendar_month .mock-grid span { width: 7px; height: 7px; background: #4a4a6a; border-radius: 1px; }
+        .widget-preview-value_tile { border: 1px dashed #4a4a6a; font-size: 20px; }
         .grid-canvas {
           position: relative;
           width: ${GRID_COLS * CELL_PX}px;
@@ -622,7 +665,13 @@ class InfohubPanel extends HTMLElement {
 
     const palette = editor.querySelector("#widget-palette");
     palette.innerHTML = Object.entries(WIDGET_CATALOG)
-      .map(([type, cat]) => `<button data-add="${type}">+ ${_escape(cat.label[this._lang()])}</button>`)
+      .map(
+        ([type, cat]) => `
+      <button class="widget-palette-btn" data-add="${type}">
+        <div class="widget-preview widget-preview-${type}">${_widgetPreviewContent(type)}</div>
+        <span>${_escape(cat.label[this._lang()])}</span>
+      </button>`
+      )
       .join("");
     palette.querySelectorAll("[data-add]").forEach((btn) => {
       btn.addEventListener("click", () => this._addWidget(panel.id, btn.dataset.add));
@@ -823,6 +872,10 @@ class InfohubPanel extends HTMLElement {
     const widgetLabel = WIDGET_CATALOG[widget.type]?.label[lang] || widget.type;
     const schema = (WIDGET_CATALOG[widget.type] || {}).options || {};
     const entries = Object.entries(schema);
+    // Widget's own data group (see WIDGET_GROUPS) - both for the entity
+    // list below and for scoping an "entity"-type option field (e.g.
+    // value_tile's entity_id) to entities actually available to it.
+    const group = WIDGET_GROUPS[widget.type];
 
     const optionsHtml = entries.length
       ? `
@@ -841,6 +894,15 @@ class InfohubPanel extends HTMLElement {
                   .map((c) => `<option value="${_escapeAttr(c)}" ${c === current ? "selected" : ""}>${_escape(c)}</option>`)
                   .join("")}</select></label>`;
               }
+              if (field.type === "entity") {
+                const scoped = (panel.entities || []).filter((e) => e.group === group);
+                return `<label>${_escape(optionLabel)}<select data-opt="${name}" data-opt-type="text"><option value="">${t.selectEntityPlaceholder}</option>${scoped
+                  .map(
+                    (e) =>
+                      `<option value="${_escapeAttr(e.entity_id)}" ${e.entity_id === current ? "selected" : ""}>${_escape(e.label || e.entity_id)}</option>`
+                  )
+                  .join("")}</select></label>`;
+              }
               return `<label>${_escape(optionLabel)}<input type="number" data-opt="${name}" data-opt-type="number" value="${_escapeAttr(current)}" ${
                 field.min !== undefined ? `min="${field.min}"` : ""
               } ${field.max !== undefined ? `max="${field.max}"` : ""} /></label>`;
@@ -850,10 +912,6 @@ class InfohubPanel extends HTMLElement {
       `
       : `<div class="hint">${_escape(t.noOptions(widgetLabel))}</div>`;
 
-    // Entities are shown per-widget (only those feeding the group this
-    // widget type reads from - see WIDGET_GROUPS), not as one flat list
-    // of everything the panel happens to use.
-    const group = WIDGET_GROUPS[widget.type];
     let entitiesHtml;
     if (!group) {
       entitiesHtml = `<div class="hint" style="margin-top:16px;">${t.noEntitiesForWidget}</div>`;
@@ -938,6 +996,27 @@ class InfohubPanel extends HTMLElement {
         });
       });
     }
+  }
+}
+
+function _widgetPreviewContent(type) {
+  switch (type) {
+    case "clock":
+      return '<span class="mock-text">88:88</span>';
+    case "weather_current":
+      return "☀️";
+    case "power_gauge":
+      return '<div class="mock-arc">⚡</div>';
+    case "indoor_climate":
+      return "🌡️ 💧";
+    case "waste_next":
+      return "🗑️";
+    case "calendar_month":
+      return '<div class="mock-grid">' + "<span></span>".repeat(10) + "</div>";
+    case "value_tile":
+      return "⚙️";
+    default:
+      return "";
   }
 }
 

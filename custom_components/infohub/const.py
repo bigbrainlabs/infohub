@@ -37,12 +37,12 @@ GROUP_STROM = "strom"
 GROUP_ABFALL = "abfall"
 GROUP_RAUMKLIMA = "raumklima"
 GROUP_KALENDER = "kalender"
-
-# Gruppen, die der Options-Flow beim manuellen Entity-Hinzufuegen zur
-# Auswahl anbietet. "kalender" bewusst ausgeschlossen: Kalender-Events
-# kommen spaeter ueber HA's calendar.get_events-Service, nicht als
-# einzeln zugeordnete sensor.*-Entity wie die anderen Gruppen.
-ENTITY_GROUP_CHOICES = (GROUP_WETTER, GROUP_STROM, GROUP_ABFALL, GROUP_RAUMKLIMA)
+# Backing group for the generic "value_tile" widget type (widgets.py) -
+# any entity added here can be picked, per value_tile instance, via that
+# widget's own "entity_id" option. Unlike the other groups it isn't tied
+# to one specific widget type 1:1; several value_tile widgets can share
+# this same pool and each pick a different entity from it.
+GROUP_CUSTOM = "custom"
 
 # Per-panel display language - controls what's actually rendered on the
 # physical display (widget titles, weekday/month names, weather terms in

@@ -918,6 +918,13 @@ class InfoHubDisplay:
         self.waste_preview_cols = []
         self._preview_waste_types = [None, None, None]
 
+        # Value-tile refs - unlike the other widget types (one card ref
+        # each), any number of value_tile widgets can exist at once, each
+        # bound to a different entity_id from the shared "custom" group -
+        # so this is a list, populated in _setup_value_tile_card() and
+        # walked by update_custom() to update just the right one(s).
+        self._value_tiles = []
+
         # Clock card refs (standalone widget, see _setup_clock_card)
         self.clock_digits = []
         self.clock_colon_dots = []
@@ -2233,6 +2240,30 @@ class InfoHubDisplay:
     # Calendar Card Setup (730x1070)
     # ------------------------------------------------------------------
 
+    def _setup_value_tile_card(self, card, options=None):
+        """Generic widget: shows one entity's state, chosen server-side via
+        the widget's own "entity_id" option (widgets.py's WIDGET_VALUE_TILE).
+
+        v1: a single display style (big centered value + unit). The
+        card's title is already set by _create_card() from the wire
+        "label" - the server resolves that to the bound entity's own
+        configured label (see layout.py's _widget_label()), so nothing
+        extra is needed here for it.
+        """
+        options = options or {}
+        entity_id = options.get("entity_id") or ""
+        card_w = options.get("_card_w") or 300
+
+        value_label = lv.label(card)
+        value_label.set_text("?" if not entity_id else "--")
+        value_label.set_style_text_color(lv.color_hex(THEME["text"]), 0)
+        value_label.set_style_text_font(lv.font_montserrat_24, 0)
+        value_label.set_width(max(40, card_w - 30))
+        value_label.set_style_text_align(lv.TEXT_ALIGN.CENTER, 0)
+        value_label.align(lv.ALIGN.CENTER, 0, 10)
+
+        self._value_tiles.append({"entity_id": entity_id, "label": value_label})
+
     def _setup_clock_card(self, card, options=None):
         """Set up the standalone digital clock card (7-segment digits + date).
 
@@ -3492,6 +3523,22 @@ class InfoHubDisplay:
         except Exception as e:
             print('Indoor update error:', e)
 
+    def update_custom(self, data):
+        """Updates every value_tile widget from the shared "custom" group.
+
+        `data` is keyed by entity_id (like every other group) - each
+        value_tile in self._value_tiles picks out just the one entity_id
+        its own "entity_id" option named (see _setup_value_tile_card).
+        """
+        for tile in self._value_tiles:
+            entity_data = data.get(tile["entity_id"])
+            if not entity_data:
+                continue
+            state = str(entity_data.get("state", "--"))
+            unit = entity_data.get("unit", "")
+            text = state + (" " + unit if unit else "")
+            tile["label"].set_text(_safe_text(text))
+
     def process_message(self, msg):
         """Process incoming WebSocket message"""
         try:
@@ -3535,6 +3582,8 @@ class InfoHubDisplay:
             self.update_calendar(group_data)
         elif group == "raumklima":
             self.update_indoor(group_data)
+        elif group == "custom":
+            self.update_custom(group_data)
 
     # ------------------------------------------------------------------
     # Layout (server-driven screens/widgets)
@@ -3581,6 +3630,7 @@ class InfoHubDisplay:
             self.raumklima_card = None
             self.calendar_card = None
             self.power_card = None
+            self._value_tiles = []
 
             self._layout_screen_ids = [s.get("id") for s in screens]
 
@@ -3659,6 +3709,7 @@ class InfoHubDisplay:
             "waste_next": self._setup_waste_card,
             "indoor_climate": self._setup_raumklima_card,
             "calendar_month": self._setup_calendar_card,
+            "value_tile": self._setup_value_tile_card,
         }
 
         for widget in screen.get("widgets", []):

@@ -26,6 +26,12 @@ WIDGET_POWER_GAUGE = "power_gauge"
 WIDGET_WASTE_NEXT = "waste_next"
 WIDGET_INDOOR_CLIMATE = "indoor_climate"
 WIDGET_CALENDAR_MONTH = "calendar_month"
+# Generic widget: shows one entity the user picks (its "entity_id"
+# option) from the shared "custom" entity group (const.GROUP_CUSTOM) -
+# unlike the other types, which each read every entity of their own
+# fixed group. Lets the widget gallery grow to "any HA entity" without
+# a new hardcoded type/renderer per kind of information.
+WIDGET_VALUE_TILE = "value_tile"
 
 # Bilingual widget display names - keyed by wire language code ("de"/"en",
 # see const.LANGUAGE_CHOICES). layout.py's layout_from_panel() resolves
@@ -40,6 +46,7 @@ WIDGET_LABELS: dict[str, dict[str, str]] = {
     WIDGET_INDOOR_CLIMATE: {"de": "Raumklima", "en": "Indoor Climate"},
     WIDGET_WASTE_NEXT: {"de": "Abfall", "en": "Waste"},
     WIDGET_CALENDAR_MONTH: {"de": "Kalender", "en": "Calendar"},
+    WIDGET_VALUE_TILE: {"de": "Info-Kachel", "en": "Info Tile"},
 }
 
 # default_size = (colspan, rowspan) in grid units, used when a widget is
@@ -77,6 +84,16 @@ WIDGET_CATALOG: dict[str, dict[str, Any]] = {
         "default_size": (9, 14),
         "options": {
             "months_shown": {"type": "number", "default": 2, "min": 1, "max": 2},
+        },
+    },
+    WIDGET_VALUE_TILE: {
+        "default_size": (6, 4),
+        "options": {
+            # "entity" is a new option type: a dropdown scoped to the
+            # panel's GROUP_CUSTOM entities (see panel/infohub-panel.js's
+            # option-form renderer) rather than every hass.states entity -
+            # it must already be one the coordinator is tracking.
+            "entity_id": {"type": "entity", "default": ""},
         },
     },
 }
