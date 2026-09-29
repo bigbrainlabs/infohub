@@ -3632,6 +3632,20 @@ class InfoHubDisplay:
             self.power_card = None
             self._value_tiles = []
 
+            # "Did this value change since the last icon/color draw?"
+            # guards - separate from the widget refs above, but just as
+            # stale after a rebuild: the icon containers/arcs they guard
+            # get recreated empty/default-colored, but these would still
+            # remember the *old* value and skip redrawing into them,
+            # leaving e.g. the waste icon blank until the value actually
+            # changes again. Reset alongside the refs for the same reason.
+            self._current_condition = None
+            self._current_raumklima_color = None
+            self._current_power_color = None
+            self._current_waste_type = None
+            self._preview_waste_types = [None, None, None]
+            self._forecast_conditions = [None] * 5
+
             self._layout_screen_ids = [s.get("id") for s in screens]
 
             for index, screen in enumerate(screens):
