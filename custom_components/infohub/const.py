@@ -43,3 +43,15 @@ GROUP_KALENDER = "kalender"
 # kommen spaeter ueber HA's calendar.get_events-Service, nicht als
 # einzeln zugeordnete sensor.*-Entity wie die anderen Gruppen.
 ENTITY_GROUP_CHOICES = (GROUP_WETTER, GROUP_STROM, GROUP_ABFALL, GROUP_RAUMKLIMA)
+
+# Per-panel display language - controls what's actually rendered on the
+# physical display (widget titles, weekday/month names, weather terms in
+# the client) for whichever device that panel is assigned to. Deliberately
+# separate from the sidebar admin UI's own language, which just follows
+# hass.language like any native HA panel - see panel/infohub-panel.js's
+# module docstring. New panels default to "en" (publication default);
+# panels that existed before this field was introduced are migrated to
+# "de" once, in panels.async_setup_panel_collection(), to preserve their
+# current real-world behavior.
+LANGUAGE_CHOICES = ("de", "en")
+DEFAULT_LANGUAGE = "en"

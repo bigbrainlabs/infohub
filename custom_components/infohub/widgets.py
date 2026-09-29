@@ -27,12 +27,26 @@ WIDGET_WASTE_NEXT = "waste_next"
 WIDGET_INDOOR_CLIMATE = "indoor_climate"
 WIDGET_CALENDAR_MONTH = "calendar_month"
 
+# Bilingual widget display names - keyed by wire language code ("de"/"en",
+# see const.LANGUAGE_CHOICES). layout.py's layout_from_panel() resolves
+# the right one per-panel and sends it as each widget's wire "label" -
+# that's what display clients render as the card title, see
+# widget_label() below. The sidebar panel's JS keeps its own matching
+# copy (WIDGET_CATALOG.label) since there's no build step to share it.
+WIDGET_LABELS: dict[str, dict[str, str]] = {
+    WIDGET_CLOCK: {"de": "Uhr", "en": "Clock"},
+    WIDGET_WEATHER_CURRENT: {"de": "Wetter", "en": "Weather"},
+    WIDGET_POWER_GAUGE: {"de": "Strom", "en": "Power"},
+    WIDGET_INDOOR_CLIMATE: {"de": "Raumklima", "en": "Indoor Climate"},
+    WIDGET_WASTE_NEXT: {"de": "Abfall", "en": "Waste"},
+    WIDGET_CALENDAR_MONTH: {"de": "Kalender", "en": "Calendar"},
+}
+
 # default_size = (colspan, rowspan) in grid units, used when a widget is
 # newly added without an explicit size. options: field name -> schema
 # dict with at least "type" ("bool" | "number" | "select") and "default".
 WIDGET_CATALOG: dict[str, dict[str, Any]] = {
     WIDGET_CLOCK: {
-        "label": "Uhr",
         "default_size": (7, 3),
         "options": {
             "format": {"type": "select", "choices": ["24h", "12h"], "default": "24h"},
@@ -40,37 +54,38 @@ WIDGET_CATALOG: dict[str, dict[str, Any]] = {
         },
     },
     WIDGET_WEATHER_CURRENT: {
-        "label": "Wetter",
         "default_size": (7, 8),
         "options": {
             "show_scene": {"type": "bool", "default": True},
         },
     },
     WIDGET_POWER_GAUGE: {
-        "label": "Strom",
         "default_size": (8, 6),
         "options": {
             "max_value": {"type": "number", "default": 5000},
         },
     },
     WIDGET_INDOOR_CLIMATE: {
-        "label": "Raumklima",
         "default_size": (7, 5),
         "options": {},
     },
     WIDGET_WASTE_NEXT: {
-        "label": "Abfall",
         "default_size": (8, 8),
         "options": {},
     },
     WIDGET_CALENDAR_MONTH: {
-        "label": "Kalender",
         "default_size": (9, 14),
         "options": {
             "months_shown": {"type": "number", "default": 2, "min": 1, "max": 2},
         },
     },
 }
+
+
+def widget_label(widget_type: str, language: str) -> str:
+    """Bilingual display name for a widget type, e.g. for the wire label."""
+    labels = WIDGET_LABELS.get(widget_type, {})
+    return labels.get(language) or labels.get("en") or widget_type
 
 
 def default_options(widget_type: str) -> dict[str, Any]:

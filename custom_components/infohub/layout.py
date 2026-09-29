@@ -20,8 +20,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from .const import PROTOCOL_VERSION
-from .widgets import GRID_COLS, GRID_ROWS, WIDGET_CATALOG
+from .const import DEFAULT_LANGUAGE, PROTOCOL_VERSION
+from .widgets import GRID_COLS, GRID_ROWS, widget_label
 
 # Which full_update data group each widget type reads from. "clock" has
 # none - it renders local time, not HA state.
@@ -32,6 +32,8 @@ _TYPE_TO_GROUP = {
     "indoor_climate": "raumklima",
     "calendar_month": "kalender",
 }
+
+_SCREEN_LABELS = {"de": "Übersicht", "en": "Overview"}
 
 
 @dataclass(frozen=True)
@@ -114,15 +116,24 @@ class Navigation:
 
 @dataclass(frozen=True)
 class Layout:
-    """Full layout: all screens plus navigation between them."""
+    """Full layout: all screens plus navigation between them.
+
+    `language` is the panel's display language ("de"/"en") - display
+    clients use it to pick between their own built-in string tables for
+    things the server doesn't send text for (weekday/month names,
+    weather condition terms, etc.); everything the server *does* send
+    text for (widget labels) is already localized before it gets here.
+    """
 
     screens: tuple[Screen, ...]
     navigation: Navigation
+    language: str = DEFAULT_LANGUAGE
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "screens": [s.as_dict() for s in self.screens],
             "navigation": self.navigation.as_dict(),
+            "language": self.language,
         }
 
     def as_message(self) -> dict[str, Any]:
@@ -140,16 +151,18 @@ def layout_from_panel(panel: dict[str, Any]) -> Layout:
 
     There is still only ever one real screen ("overview") - a panel's
     `widgets` list *is* that screen's content. Each widget's data_source
-    and display label are derived from its type via WIDGET_CATALOG/
+    and display label are derived from its type via widgets.widget_label()/
     _TYPE_TO_GROUP, not stored per-instance, since those are inherent to
-    the type, not something the user configures per widget.
+    the type, not something the user configures per widget. The display
+    label is resolved to the panel's own `language` (see Layout).
     """
+    language = panel.get("language") or DEFAULT_LANGUAGE
     widgets = tuple(
         Widget(
             id=w["id"],
             type=w["type"],
             pos=WidgetPosition(**w["pos"]),
-            label=WIDGET_CATALOG.get(w["type"], {}).get("label", w["type"]),
+            label=widget_label(w["type"], language),
             data_source=(
                 {"group": _TYPE_TO_GROUP[w["type"]]} if w["type"] in _TYPE_TO_GROUP else {}
             ),
@@ -159,10 +172,12 @@ def layout_from_panel(panel: dict[str, Any]) -> Layout:
     )
     screen = Screen(
         id="overview",
-        label="Übersicht",
+        label=_SCREEN_LABELS.get(language, _SCREEN_LABELS["en"]),
         icon="mdi:home",
         grid_cols=GRID_COLS,
         grid_rows=GRID_ROWS,
         widgets=widgets,
     )
-    return Layout(screens=(screen,), navigation=Navigation(order=(screen.id,)))
+    return Layout(
+        screens=(screen,), navigation=Navigation(order=(screen.id,)), language=language
+    )

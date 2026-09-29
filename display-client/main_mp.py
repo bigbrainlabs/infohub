@@ -42,33 +42,155 @@ THEME = {
     "rain_blue": 0x5b9bd5,
 }
 
+# Display language ("de"/"en") - set from each layout_update's top-level
+# "language" field (see apply_layout()), which mirrors the panel's own
+# language setting (custom_components/infohub/panels.py). A module-level
+# global rather than an instance attribute since several of the lookup
+# functions below (_format_waste_date, _format_days_text, ...) are plain
+# module functions with no `self`, and this script is single-threaded
+# cooperative asyncio - no concurrency concern in reading/writing it.
+# Default "de" matches this client's behavior before this field existed,
+# so an old cached layout (or the brief window before the first
+# layout_update arrives) still looks like it always did.
+_LANGUAGE = "de"
+
 # Condition translation map
 CONDITION_MAP = {
-    "sunny": "Sonnig",
-    "clear-night": "Klare Nacht",
-    "partlycloudy": "Teilw. bewoelkt",
-    "cloudy": "Bewoelkt",
-    "rainy": "Regen",
-    "pouring": "Starkregen",
-    "snowy": "Schnee",
-    "snowy-rainy": "Schneeregen",
-    "fog": "Nebel",
-    "hail": "Hagel",
-    "lightning": "Gewitter",
-    "lightning-rainy": "Gewitter+Regen",
-    "windy": "Windig",
-    "windy-variant": "Windig",
-    "exceptional": "Besonders",
+    "de": {
+        "sunny": "Sonnig",
+        "clear-night": "Klare Nacht",
+        "partlycloudy": "Teilw. bewoelkt",
+        "cloudy": "Bewoelkt",
+        "rainy": "Regen",
+        "pouring": "Starkregen",
+        "snowy": "Schnee",
+        "snowy-rainy": "Schneeregen",
+        "fog": "Nebel",
+        "hail": "Hagel",
+        "lightning": "Gewitter",
+        "lightning-rainy": "Gewitter+Regen",
+        "windy": "Windig",
+        "windy-variant": "Windig",
+        "exceptional": "Besonders",
+    },
+    "en": {
+        "sunny": "Sunny",
+        "clear-night": "Clear Night",
+        "partlycloudy": "Partly Cloudy",
+        "cloudy": "Cloudy",
+        "rainy": "Rainy",
+        "pouring": "Heavy Rain",
+        "snowy": "Snowy",
+        "snowy-rainy": "Sleet",
+        "fog": "Fog",
+        "hail": "Hail",
+        "lightning": "Thunderstorm",
+        "lightning-rainy": "Storm+Rain",
+        "windy": "Windy",
+        "windy-variant": "Windy",
+        "exceptional": "Exceptional",
+    },
 }
 
 # Day name map (0=Monday .. 6=Sunday)
-DAY_NAMES = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
-DAY_NAMES_FULL = ["Montag", "Dienstag", "Mittwoch", "Donnerstag",
-                  "Freitag", "Samstag", "Sonntag"]
-MONTH_NAMES = ["Jan", "Feb", "Maer", "Apr", "Mai", "Jun",
-               "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"]
-MONTH_NAMES_FULL = ["Januar", "Februar", "Maerz", "April", "Mai", "Juni",
-                    "Juli", "August", "September", "Oktober", "November", "Dezember"]
+DAY_NAMES = {
+    "de": ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
+    "en": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+}
+DAY_NAMES_FULL = {
+    "de": ["Montag", "Dienstag", "Mittwoch", "Donnerstag",
+           "Freitag", "Samstag", "Sonntag"],
+    "en": ["Monday", "Tuesday", "Wednesday", "Thursday",
+           "Friday", "Saturday", "Sunday"],
+}
+MONTH_NAMES = {
+    "de": ["Jan", "Feb", "Maer", "Apr", "Mai", "Jun",
+           "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"],
+    "en": ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+}
+MONTH_NAMES_FULL = {
+    "de": ["Januar", "Februar", "Maerz", "April", "Mai", "Juni",
+           "Juli", "August", "September", "Oktober", "November", "Dezember"],
+    "en": ["January", "February", "March", "April", "May", "June",
+           "July", "August", "September", "October", "November", "December"],
+}
+
+# Wind compass abbreviations - German uses O (Ost) where English uses E
+# (East), so this isn't just a lookup-table-format nicety.
+WIND_DIRS = {
+    "de": ["N", "NO", "O", "SO", "S", "SW", "W", "NW"],
+    "en": ["N", "NE", "E", "SE", "S", "SW", "W", "NW"],
+}
+
+# Static UI text that isn't a lookup table - see _t().
+STRINGS = {
+    "de": {
+        "connecting": "Verbinde...",
+        "connected": "Verbunden",
+        "disconnected": "Getrennt",
+        "forecast": "Vorhersage",
+        "no_forecast": "Keine Vorhersage verfuegbar",
+        "clouds": "Wolken",
+        "humidity_short": "Feuchte",
+        "precipitation_short": "Nieders.",
+        "wind": "Wind",
+        "pressure": "Druck",
+        "visibility": "Sicht",
+        "comfort": "Komfort",
+        "temperature": "Temperatur",
+        "humidity": "Luftfeuchtigkeit",
+        "current_power": "Aktuelle Leistung",
+        "daily_consumption": "Tagesverbrauch",
+        "power_price": "Strompreis",
+        "monthly_cost": "Monatskosten",
+        "all_dates": "Alle Termine",
+        "next_appointments": "Naechste Termine",
+        "appointments_on": "Termine am",
+        "all_day": "Ganztaegig",
+        "reminder": "Erinnerung",
+        "now": "Jetzt!",
+        "today": "Heute!",
+        "tomorrow": "Morgen",
+        "in_days": "Tagen",
+        "in_minutes": "Minuten",
+    },
+    "en": {
+        "connecting": "Connecting...",
+        "connected": "Connected",
+        "disconnected": "Disconnected",
+        "forecast": "Forecast",
+        "no_forecast": "No forecast available",
+        "clouds": "Clouds",
+        "humidity_short": "Humidity",
+        "precipitation_short": "Precip.",
+        "wind": "Wind",
+        "pressure": "Pressure",
+        "visibility": "Visibility",
+        "comfort": "Comfort",
+        "temperature": "Temperature",
+        "humidity": "Humidity",
+        "current_power": "Current Power",
+        "daily_consumption": "Daily Usage",
+        "power_price": "Power Price",
+        "monthly_cost": "Monthly Cost",
+        "all_dates": "All Dates",
+        "next_appointments": "Upcoming",
+        "appointments_on": "Events on",
+        "all_day": "All day",
+        "reminder": "Reminder",
+        "now": "Now!",
+        "today": "Today!",
+        "tomorrow": "Tomorrow",
+        "in_days": "days",
+        "in_minutes": "minutes",
+    },
+}
+
+
+def _t(key):
+    """Looks up a static UI string in the current display language."""
+    return STRINGS.get(_LANGUAGE, STRINGS["de"]).get(key, key)
 
 # 7-Segment digit patterns: (a, b, c, d, e, f, g)
 SEGMENTS = {
@@ -134,8 +256,9 @@ def _zfill(s, n):
 
 
 def _translate_condition(condition):
-    """Translate HA weather condition to German."""
-    return CONDITION_MAP.get(condition, str(condition))
+    """Translate HA weather condition to the current display language."""
+    table = CONDITION_MAP.get(_LANGUAGE, CONDITION_MAP["de"])
+    return table.get(condition, str(condition))
 
 
 def _fmt1(v):
@@ -161,7 +284,7 @@ def _bearing_to_compass(bearing):
         bearing = float(bearing)
     except (TypeError, ValueError):
         return ""
-    dirs = ["N", "NO", "O", "SO", "S", "SW", "W", "NW"]
+    dirs = WIND_DIRS.get(_LANGUAGE, WIND_DIRS["de"])
     idx = int((bearing + 22.5) / 45) % 8
     return dirs[idx]
 
@@ -176,7 +299,7 @@ def _get_day_name(date_str):
         day = int(parts[2])
         t = time.mktime((year, month, day, 0, 0, 0, 0, 0, -1))
         lt = time.localtime(t)
-        return DAY_NAMES[lt[6]]
+        return DAY_NAMES.get(_LANGUAGE, DAY_NAMES["de"])[lt[6]]
     except Exception:
         return "?"
 
@@ -204,8 +327,8 @@ def _format_waste_date(date_str):
         day = int(parts[2])
         t = time.mktime((year, month, day, 0, 0, 0, 0, 0, -1))
         lt = time.localtime(t)
-        day_name = DAY_NAMES[lt[6]]
-        month_name = MONTH_NAMES[month - 1]
+        day_name = DAY_NAMES.get(_LANGUAGE, DAY_NAMES["de"])[lt[6]]
+        month_name = MONTH_NAMES.get(_LANGUAGE, MONTH_NAMES["de"])[month - 1]
         return day_name + ", " + str(day) + ". " + month_name
     except Exception:
         return str(date_str)
@@ -218,10 +341,6 @@ def _safe_text(text):
                      ("Ä", "Ae"), ("Ö", "Oe"), ("Ü", "Ue")]:
         t = t.replace(old, new)
     return t
-
-
-_MONTH_NAMES = ["Jan", "Feb", "Maerz", "Apr", "Mai", "Jun",
-                "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"]
 
 
 def _estimate_gts_200(current_gts, forecast):
@@ -289,20 +408,21 @@ def _estimate_gts_200(current_gts, forecast):
                 sim_month = 1
                 sim_year += 1
         if gts >= 200:
-            return "~" + str(sim_day) + ". " + _MONTH_NAMES[sim_month - 1]
+            month_names = MONTH_NAMES.get(_LANGUAGE, MONTH_NAMES["de"])
+            return "~" + str(sim_day) + ". " + month_names[sim_month - 1]
 
     return "--"
 
 
 def _format_days_text(days):
-    """Format days until collection as German text."""
+    """Format days until collection in the current display language."""
     if days is None:
         return "--"
     if days == 0:
-        return "Heute!"
+        return _t("today")
     if days == 1:
-        return "Morgen"
-    return "in " + str(days) + " Tagen"
+        return _t("tomorrow")
+    return "in " + str(days) + " " + _t("in_days")
 
 
 def _days_in_month(year, month):
@@ -912,7 +1032,7 @@ class InfoHubDisplay:
         title.align(lv.ALIGN.LEFT_MID, 30, 0)
 
         self.status_label = lv.label(header)
-        self.status_label.set_text("Verbinde...")
+        self.status_label.set_text(_t("connecting"))
         self.status_label.set_style_text_color(lv.color_hex(THEME["warning"]), 0)
         self.status_label.set_style_text_font(lv.font_montserrat_16, 0)
         self.status_label.align(lv.ALIGN.RIGHT_MID, -30, 0)
@@ -1377,14 +1497,14 @@ class InfoHubDisplay:
 
         # Detail grid
         detail_items_left = [
-            ("clouds", "Wolken", "-- %"),
-            ("humidity", "Feuchte", "-- %"),
-            ("precipitation", "Nieders.", "-- mm"),
+            ("clouds", _t("clouds"), "-- %"),
+            ("humidity", _t("humidity_short"), "-- %"),
+            ("precipitation", _t("precipitation_short"), "-- mm"),
         ]
         detail_items_right = [
-            ("wind", "Wind", "-- km/h"),
-            ("pressure", "Druck", "-- hPa"),
-            ("visibility", "Sicht", "-- km"),
+            ("wind", _t("wind"), "-- km/h"),
+            ("pressure", _t("pressure"), "-- hPa"),
+            ("visibility", _t("visibility"), "-- km"),
         ]
         y_start = 305
         y_step = 45
@@ -1458,7 +1578,7 @@ class InfoHubDisplay:
         forecast_sep.remove_flag(lv.obj.FLAG.CLICKABLE)
 
         forecast_header = lv.label(card)
-        forecast_header.set_text("Vorhersage")
+        forecast_header.set_text(_t("forecast"))
         forecast_header.set_style_text_color(lv.color_hex(THEME["text_secondary"]), 0)
         forecast_header.set_style_text_font(lv.font_montserrat_14, 0)
         forecast_header.set_pos(20, 492)
@@ -1506,7 +1626,7 @@ class InfoHubDisplay:
             self.forecast_cols.append(col)
 
         self.forecast_fallback_label = lv.label(card)
-        self.forecast_fallback_label.set_text("Keine Vorhersage verfuegbar")
+        self.forecast_fallback_label.set_text(_t("no_forecast"))
         self.forecast_fallback_label.set_style_text_color(lv.color_hex(THEME["text_secondary"]), 0)
         self.forecast_fallback_label.set_style_text_font(lv.font_montserrat_16, 0)
         self.forecast_fallback_label.set_pos(150, 580)
@@ -1832,7 +1952,7 @@ class InfoHubDisplay:
         self.raumklima_index_label.set_pos(180, 115)
 
         comfort_hint = lv.label(card)
-        comfort_hint.set_text("Komfort")
+        comfort_hint.set_text(_t("comfort"))
         comfort_hint.set_style_text_color(
             lv.color_hex(THEME["text_secondary"]), 0)
         comfort_hint.set_style_text_font(lv.font_montserrat_14, 0)
@@ -1852,7 +1972,7 @@ class InfoHubDisplay:
 
         # Temperature (left column)
         temp_header = lv.label(card)
-        temp_header.set_text("Temperatur")
+        temp_header.set_text(_t("temperature"))
         temp_header.set_style_text_color(lv.color_hex(THEME["text_secondary"]), 0)
         temp_header.set_style_text_font(lv.font_montserrat_14, 0)
         temp_header.set_pos(60, 220)
@@ -1875,7 +1995,7 @@ class InfoHubDisplay:
 
         # Humidity (right column)
         hum_header = lv.label(card)
-        hum_header.set_text("Luftfeuchtigkeit")
+        hum_header.set_text(_t("humidity"))
         hum_header.set_style_text_color(lv.color_hex(THEME["text_secondary"]), 0)
         hum_header.set_style_text_font(lv.font_montserrat_14, 0)
         hum_header.set_pos(310, 220)
@@ -1934,7 +2054,7 @@ class InfoHubDisplay:
         self.power_value_label.set_pos(310, 90)
 
         self.power_hint_label = lv.label(card)
-        self.power_hint_label.set_text("Aktuelle Leistung")
+        self.power_hint_label.set_text(_t("current_power"))
         self.power_hint_label.set_style_text_color(lv.color_hex(THEME["text_secondary"]), 0)
         self.power_hint_label.set_style_text_font(lv.font_montserrat_14, 0)
         self.power_hint_label.set_pos(310, 125)
@@ -1955,7 +2075,7 @@ class InfoHubDisplay:
         self.power_consumption_label.set_pos(310, 180)
 
         self.power_consumption_hint = lv.label(card)
-        self.power_consumption_hint.set_text("Tagesverbrauch")
+        self.power_consumption_hint.set_text(_t("daily_consumption"))
         self.power_consumption_hint.set_style_text_color(lv.color_hex(THEME["text_secondary"]), 0)
         self.power_consumption_hint.set_style_text_font(lv.font_montserrat_14, 0)
         self.power_consumption_hint.set_pos(310, 210)
@@ -1977,7 +2097,7 @@ class InfoHubDisplay:
         self.power_price_label.set_pos(50, 375)
 
         self.power_price_hint = lv.label(card)
-        self.power_price_hint.set_text("Strompreis")
+        self.power_price_hint.set_text(_t("power_price"))
         self.power_price_hint.set_style_text_color(lv.color_hex(THEME["text_secondary"]), 0)
         self.power_price_hint.set_style_text_font(lv.font_montserrat_14, 0)
         self.power_price_hint.set_pos(50, 405)
@@ -1990,7 +2110,7 @@ class InfoHubDisplay:
         self.power_cost_label.set_pos(310, 375)
 
         self.power_cost_hint = lv.label(card)
-        self.power_cost_hint.set_text("Monatskosten")
+        self.power_cost_hint.set_text(_t("monthly_cost"))
         self.power_cost_hint.set_style_text_color(lv.color_hex(THEME["text_secondary"]), 0)
         self.power_cost_hint.set_style_text_font(lv.font_montserrat_14, 0)
         self.power_cost_hint.set_pos(310, 405)
@@ -2031,7 +2151,7 @@ class InfoHubDisplay:
         self.waste_main_date_label.set_pos(190, 165)
 
         overview_title = lv.label(card)
-        overview_title.set_text("Alle Termine")
+        overview_title.set_text(_t("all_dates"))
         overview_title.set_style_text_color(lv.color_hex(THEME["text_secondary"]), 0)
         overview_title.set_style_text_font(lv.font_montserrat_14, 0)
         overview_title.set_pos(370, 55)
@@ -2328,7 +2448,7 @@ class InfoHubDisplay:
         evt_top = grid_top
 
         self.cal_event_header = lv.label(card)
-        self.cal_event_header.set_text("Naechste Termine")
+        self.cal_event_header.set_text(_t("next_appointments"))
         self.cal_event_header.set_style_text_color(
             lv.color_hex(THEME["text_secondary"]), 0)
         self.cal_event_header.set_style_text_font(lv.font_montserrat_16, 0)
@@ -2398,8 +2518,9 @@ class InfoHubDisplay:
 
     def _build_month_grid(self, cells, header_label, year, month):
         """Build/rebuild a calendar grid for the given month."""
+        month_names_full = MONTH_NAMES_FULL.get(_LANGUAGE, MONTH_NAMES_FULL["de"])
         header_label.set_text(
-            _safe_text(MONTH_NAMES_FULL[month - 1]) + " " + str(year))
+            _safe_text(month_names_full[month - 1]) + " " + str(year))
 
         first_wd = _weekday_of_first(year, month)
         num_days = _days_in_month(year, month)
@@ -2500,9 +2621,10 @@ class InfoHubDisplay:
                     dot.add_flag(lv.obj.FLAG.HIDDEN)
 
         if self.clock_weekday_label:
-            weekday = DAY_NAMES_FULL[now[6]]
+            weekday = DAY_NAMES_FULL.get(_LANGUAGE, DAY_NAMES_FULL["de"])[now[6]]
+            month_names_full = MONTH_NAMES_FULL.get(_LANGUAGE, MONTH_NAMES_FULL["de"])
             date_str = (str(now[2]) + ". " +
-                        MONTH_NAMES_FULL[now[1] - 1] + " " + str(now[0]))
+                        month_names_full[now[1] - 1] + " " + str(now[0]))
             self.clock_weekday_label.set_text(_safe_text(weekday))
             self.clock_date_label.set_text(_safe_text(date_str))
 
@@ -2634,11 +2756,11 @@ class InfoHubDisplay:
                 t = time.mktime((sel_y, sel_m,
                                  day, 0, 0, 0, 0, 0, -1))
                 lt = time.localtime(t)
-                weekday = DAY_NAMES[lt[6]]
+                weekday = DAY_NAMES.get(_LANGUAGE, DAY_NAMES["de"])[lt[6]]
             except Exception:
                 pass
-            month_name = MONTH_NAMES[sel_m - 1]
-            header = ("Termine am " + weekday + ", " +
+            month_name = MONTH_NAMES.get(_LANGUAGE, MONTH_NAMES["de"])[sel_m - 1]
+            header = (_t("appointments_on") + " " + weekday + ", " +
                       str(day) + ". " + month_name)
             self.cal_event_header.set_text(_safe_text(header))
 
@@ -2655,7 +2777,7 @@ class InfoHubDisplay:
                         filtered.append(ev)
             events = filtered
         else:
-            self.cal_event_header.set_text("Naechste Termine")
+            self.cal_event_header.set_text(_t("next_appointments"))
             now = time.localtime()
             today_str = (str(now[0]) + "-" + _zfill(now[1], 2) + "-" +
                          _zfill(now[2], 2))
@@ -2694,7 +2816,7 @@ class InfoHubDisplay:
                 item["bar"].set_style_bg_color(lv.color_hex(color), 0)
 
                 if ev.get("all_day"):
-                    item["time"].set_text("Ganztaegig")
+                    item["time"].set_text(_t("all_day"))
                 else:
                     start = ev.get("start", "")
                     end = ev.get("end", "")
@@ -2772,7 +2894,7 @@ class InfoHubDisplay:
 
         # Bell icon (text) + header
         header_lbl = lv.label(self._reminder_card)
-        header_lbl.set_text("Erinnerung")
+        header_lbl.set_text(_t("reminder"))
         header_lbl.set_style_text_color(lv.color_hex(THEME["primary"]), 0)
         header_lbl.set_style_text_font(lv.font_montserrat_24, 0)
         header_lbl.set_pos(25, 20)
@@ -2840,12 +2962,12 @@ class InfoHubDisplay:
         self._reminder_time_label.set_text(str(time_str))
 
         if minutes_until <= 0:
-            self._reminder_until_label.set_text("Jetzt!")
+            self._reminder_until_label.set_text(_t("now"))
             self._reminder_until_label.set_style_text_color(
                 lv.color_hex(THEME["error"]), 0)
         elif minutes_until < 60:
             self._reminder_until_label.set_text(
-                "in " + str(minutes_until) + " Minuten")
+                "in " + str(minutes_until) + " " + _t("in_minutes"))
             self._reminder_until_label.set_style_text_color(
                 lv.color_hex(THEME["warning"]), 0)
         else:
@@ -3299,11 +3421,11 @@ class InfoHubDisplay:
         self.connected = connected
         if self.status_label:
             if connected:
-                self.status_label.set_text("Verbunden")
+                self.status_label.set_text(_t("connected"))
                 self.status_label.set_style_text_color(
                     lv.color_hex(THEME["success"]), 0)
             else:
-                self.status_label.set_text("Getrennt")
+                self.status_label.set_text(_t("disconnected"))
                 self.status_label.set_style_text_color(
                     lv.color_hex(THEME["error"]), 0)
 
@@ -3428,6 +3550,9 @@ class InfoHubDisplay:
             screens = layout_msg.get("screens", [])
             if not screens:
                 return
+
+            global _LANGUAGE
+            _LANGUAGE = layout_msg.get("language", _LANGUAGE)
 
             self._delete_timer(self._scene_timer)
             self._scene_timer = None

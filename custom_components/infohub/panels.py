@@ -26,7 +26,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import collection
 from homeassistant.helpers.storage import Store
 
-from .const import CONF_ENTITIES, DOMAIN
+from .const import CONF_ENTITIES, DEFAULT_LANGUAGE, DOMAIN, LANGUAGE_CHOICES
 from .entities import DEFAULT_ENTITY_GROUPS, entity_groups_as_list
 from .widgets import DEFAULT_WIDGETS
 
@@ -50,6 +50,7 @@ CREATE_FIELDS: dict = {
     vol.Optional("entities", default=list): list,
     vol.Optional("widgets", default=list): list,
     vol.Optional("assigned_device_id", default=None): vol.Any(None, str),
+    vol.Optional("language", default=DEFAULT_LANGUAGE): vol.In(LANGUAGE_CHOICES),
 }
 
 # UPDATE_FIELDS: no defaults, so a field the frontend didn't send stays
@@ -62,6 +63,7 @@ UPDATE_FIELDS: dict = {
     vol.Optional("entities"): list,
     vol.Optional("widgets"): list,
     vol.Optional("assigned_device_id"): vol.Any(None, str),
+    vol.Optional("language"): vol.In(LANGUAGE_CHOICES),
 }
 
 
@@ -139,7 +141,11 @@ async def async_setup_panel_collection(
     whatever the old options-flow-based entity list already had.
     Existing panels created before the "widgets" field existed (an
     earlier version of this integration) get DEFAULT_WIDGETS backfilled
-    once, so they don't silently end up with an empty layout.
+    once, so they don't silently end up with an empty layout. Panels
+    created before the "language" field existed are migrated to "de"
+    once (not the CREATE_FIELDS default "en") to preserve their current
+    real-world behavior - they were already showing German text on the
+    physical display before this field existed at all.
     """
     store: Store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
     panel_collection = InfoHubPanelStorageCollection(store, collection.IDManager())
@@ -161,12 +167,17 @@ async def async_setup_panel_collection(
         logger.info("InfoHub: Standard-Panel aus bisherigen Optionen angelegt")
     else:
         for panel in existing:
+            migration: dict[str, Any] = {}
             if not panel.get("widgets"):
-                await panel_collection.async_update_item(
-                    panel["id"], {"widgets": DEFAULT_WIDGETS}
-                )
+                migration["widgets"] = DEFAULT_WIDGETS
+            if not panel.get("language"):
+                migration["language"] = "de"
+            if migration:
+                await panel_collection.async_update_item(panel["id"], migration)
                 logger.info(
-                    "InfoHub: Panel '%s' auf neues Widget-Layout migriert", panel["name"]
+                    "InfoHub: Panel '%s' migriert (%s)",
+                    panel["name"],
+                    ", ".join(migration),
                 )
 
     return panel_collection

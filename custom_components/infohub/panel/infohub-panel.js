@@ -14,19 +14,106 @@
  * The widget layout editor (grid canvas, drag/resize) mirrors
  * widgets.py's WIDGET_CATALOG/GRID_COLS/GRID_ROWS - kept in sync by
  * hand since there's no build step to share it directly with Python.
+ *
+ * i18n: this admin UI (palette/labels/hints) follows Home Assistant's
+ * own configured language (hass.language) automatically, same as any
+ * native HA panel - see _lang()/_t(). That's a *separate* axis from
+ * each panel's own `language` field (edit-language select below),
+ * which controls what's rendered on the physical display that panel
+ * is assigned to - the person configuring InfoHub and the audience
+ * standing in front of a given display aren't necessarily the same,
+ * so a display's language is an explicit per-panel choice, not
+ * inherited from the admin's browser.
  */
 
-const ENTITY_GROUPS = [
-  { value: "wetter", label: "Wetter" },
-  { value: "strom", label: "Strom" },
-  { value: "abfall", label: "Abfall" },
-  { value: "raumklima", label: "Raumklima" },
-];
+const STRINGS = {
+  de: {
+    addPanel: "+ Panel anlegen",
+    noPanels: "Noch keine Panels.",
+    delete: "Löschen",
+    standard: "Standard",
+    selectOrCreatePanel: "Panel links auswählen oder anlegen.",
+    newPanelPrompt: "Name des neuen Panels:",
+    confirmDeletePanel: "Panel wirklich löschen?",
+    defaultPanelLabel: "Standard-Panel (Fallback für nicht zugeordnete Displays)",
+    assignedDevice: "Zugeordnetes Display",
+    displayLanguage: "Display-Sprache",
+    loading: "Lädt…",
+    noDeviceConnected: "Noch kein Display verbunden",
+    noFixedDevice: "— kein festes Gerät (Standard-Panel) —",
+    widgetsHeading: "Widgets",
+    colEntity: "Entity",
+    colLabel: "Label",
+    colUnit: "Einheit",
+    colWeather: "Wetter",
+    placeholderLabel: "Label",
+    placeholderUnit: "Einheit",
+    weatherCheckbox: "Wetter",
+    addEntity: "+ Hinzufügen",
+    clickWidgetHint: "Widget anklicken, um Optionen zu bearbeiten.",
+    noOptions: (label) => `${label} hat keine Optionen.`,
+    optionsFor: (label) => `Optionen: ${label}`,
+    entitiesFor: (label) => `Entities: ${label}`,
+    noEntitiesForWidget: "Dieses Widget zeigt keine Entities an.",
+    calendarEntityHint: "Die Kalenderquelle wird in den Integrations-Einstellungen konfiguriert (Konfigurieren → Google-Kalender-Entity).",
+    saveFailedPrefix: "Speichern fehlgeschlagen: ",
+    saveWidgetsError: "InfoHub: Speichern der Widgets fehlgeschlagen",
+    loadDevicesError: "InfoHub: Geräteliste laden fehlgeschlagen",
+  },
+  en: {
+    addPanel: "+ Add panel",
+    noPanels: "No panels yet.",
+    delete: "Delete",
+    standard: "Default",
+    selectOrCreatePanel: "Select a panel on the left, or create one.",
+    newPanelPrompt: "Name of the new panel:",
+    confirmDeletePanel: "Really delete this panel?",
+    defaultPanelLabel: "Default panel (fallback for unassigned displays)",
+    assignedDevice: "Assigned display",
+    displayLanguage: "Display language",
+    loading: "Loading…",
+    noDeviceConnected: "No display connected yet",
+    noFixedDevice: "— no fixed device (default panel) —",
+    widgetsHeading: "Widgets",
+    colEntity: "Entity",
+    colLabel: "Label",
+    colUnit: "Unit",
+    colWeather: "Weather",
+    placeholderLabel: "Label",
+    placeholderUnit: "Unit",
+    weatherCheckbox: "Weather",
+    addEntity: "+ Add",
+    clickWidgetHint: "Click a widget to edit its options.",
+    noOptions: (label) => `${label} has no options.`,
+    optionsFor: (label) => `Options: ${label}`,
+    entitiesFor: (label) => `Entities: ${label}`,
+    noEntitiesForWidget: "This widget doesn't display any entities.",
+    calendarEntityHint: "The calendar source is configured in the integration's settings (Configure → Google Calendar entity).",
+    saveFailedPrefix: "Save failed: ",
+    saveWidgetsError: "InfoHub: failed to save widgets",
+    loadDevicesError: "InfoHub: failed to load device list",
+  },
+};
 
-// Mirrors custom_components/infohub/widgets.py's WIDGET_CATALOG.
+// Mirrors custom_components/infohub/layout.py's _TYPE_TO_GROUP - which
+// data group (and thus which of a panel's entities) a widget type reads
+// from. "clock" has none - it renders local time, not HA state.
+// "calendar_month" has one ("kalender") but entities for it aren't
+// managed here - see the calendarEntityHint string.
+const WIDGET_GROUPS = {
+  weather_current: "wetter",
+  power_gauge: "strom",
+  waste_next: "abfall",
+  indoor_climate: "raumklima",
+  calendar_month: "kalender",
+};
+
+// Mirrors custom_components/infohub/widgets.py's WIDGET_CATALOG. Option
+// field names here are the wire/schema keys (must match widgets.py);
+// OPTION_LABELS below gives them a friendly, bilingual display name.
 const WIDGET_CATALOG = {
   clock: {
-    label: "Uhr",
+    label: { de: "Uhr", en: "Clock" },
     default_size: [7, 3],
     options: {
       format: { type: "select", choices: ["24h", "12h"], default: "24h" },
@@ -34,30 +121,38 @@ const WIDGET_CATALOG = {
     },
   },
   weather_current: {
-    label: "Wetter",
+    label: { de: "Wetter", en: "Weather" },
     default_size: [7, 8],
     options: { show_scene: { type: "bool", default: true } },
   },
   power_gauge: {
-    label: "Strom",
+    label: { de: "Strom", en: "Power" },
     default_size: [8, 6],
     options: { max_value: { type: "number", default: 5000 } },
   },
   indoor_climate: {
-    label: "Raumklima",
+    label: { de: "Raumklima", en: "Indoor climate" },
     default_size: [7, 5],
     options: {},
   },
   waste_next: {
-    label: "Abfall",
+    label: { de: "Abfall", en: "Waste" },
     default_size: [8, 8],
     options: {},
   },
   calendar_month: {
-    label: "Kalender",
+    label: { de: "Kalender", en: "Calendar" },
     default_size: [9, 14],
     options: { months_shown: { type: "number", default: 2, min: 1, max: 2 } },
   },
+};
+
+const OPTION_LABELS = {
+  format: { de: "Format", en: "Format" },
+  show_seconds: { de: "Sekunden anzeigen", en: "Show seconds" },
+  show_scene: { de: "Himmelsszene anzeigen", en: "Show sky scene" },
+  max_value: { de: "Maximalwert", en: "Max value" },
+  months_shown: { de: "Angezeigte Monate", en: "Months shown" },
 };
 
 const GRID_COLS = 24;
@@ -75,15 +170,31 @@ class InfohubPanel extends HTMLElement {
   }
 
   set hass(hass) {
+    const prevLang = this._lang();
     this._hass = hass;
     if (!this._subscribed) {
       this._subscribed = true;
       this._subscribe();
+    } else if (this._lang() !== prevLang) {
+      // HA-Sprache kann sich zur Laufzeit aendern (z.B. Benutzerwechsel) -
+      // dann muss die Admin-UI selbst (nicht die Panel-Sprache!) neu
+      // gerendert werden, um die neue Sprache zu zeigen.
+      this._render();
     }
   }
 
   get hass() {
     return this._hass;
+  }
+
+  _lang() {
+    const l = (this._hass && this._hass.language) || "en";
+    return l.toLowerCase().startsWith("de") ? "de" : "en";
+  }
+
+  _t(key, ...args) {
+    const entry = STRINGS[this._lang()][key];
+    return typeof entry === "function" ? entry(...args) : entry;
   }
 
   connectedCallback() {
@@ -131,7 +242,7 @@ class InfohubPanel extends HTMLElement {
   // -- Panels -------------------------------------------------------------
 
   async _createPanel() {
-    const name = window.prompt("Name des neuen Panels:");
+    const name = window.prompt(this._t("newPanelPrompt"));
     if (!name) return;
     const created = await this._call("infohub/panel/create", {
       name,
@@ -145,7 +256,7 @@ class InfohubPanel extends HTMLElement {
   }
 
   async _deletePanel(panelId) {
-    if (!window.confirm("Panel wirklich löschen?")) return;
+    if (!window.confirm(this._t("confirmDeletePanel"))) return;
     await this._call("infohub/panel/delete", { panel_id: panelId });
     delete this._panels[panelId];
     if (this._selectedId === panelId) {
@@ -187,11 +298,19 @@ class InfohubPanel extends HTMLElement {
     this._panels[updated.id] = updated;
   }
 
+  async _setLanguage(panelId, language) {
+    const updated = await this._call("infohub/panel/update", {
+      panel_id: panelId,
+      language,
+    });
+    this._panels[updated.id] = updated;
+  }
+
   async _loadKnownDevices() {
     try {
       return await this._call("infohub/devices/list");
     } catch (err) {
-      console.error("InfoHub: Geraeteliste laden fehlgeschlagen", err);
+      console.error(this._t("loadDevicesError"), err);
       return [];
     }
   }
@@ -224,8 +343,8 @@ class InfohubPanel extends HTMLElement {
     } catch (err) {
       // Ohne das hier waere ein fehlgeschlagenes Speichern unsichtbar -
       // das Widget saehe dann so aus, als waere der Drag "zurueckgesprungen".
-      console.error("InfoHub: Speichern der Widgets fehlgeschlagen", err);
-      window.alert("Speichern fehlgeschlagen: " + (err && err.message ? err.message : err));
+      console.error(this._t("saveWidgetsError"), err);
+      window.alert(this._t("saveFailedPrefix") + (err && err.message ? err.message : err));
       this._renderWidgetEditor(this._panels[panelId]);
       throw err;
     }
@@ -277,6 +396,7 @@ class InfohubPanel extends HTMLElement {
   // -- Rendering ------------------------------------------------------------
 
   _render() {
+    const t = STRINGS[this._lang()];
     const panels = Object.values(this._panels).sort((a, b) => a.name.localeCompare(b.name));
     const selected = this._selectedId ? this._panels[this._selectedId] : null;
 
@@ -338,7 +458,7 @@ class InfohubPanel extends HTMLElement {
         }
         .entity-add-row {
           display: grid;
-          grid-template-columns: 2fr 1fr 1fr 1fr auto auto;
+          grid-template-columns: 2fr 1fr 1fr auto auto;
           gap: 6px;
           align-items: center;
           margin-top: 12px;
@@ -406,7 +526,7 @@ class InfohubPanel extends HTMLElement {
         <div class="infohub-layout">
           <ha-card class="infohub-card">
             <div id="panel-list"></div>
-            <button class="add-panel-btn" id="add-panel">+ Panel anlegen</button>
+            <button class="add-panel-btn" id="add-panel">${t.addPanel}</button>
           </ha-card>
           <ha-card class="infohub-card" id="panel-editor"></ha-card>
         </div>
@@ -419,11 +539,11 @@ class InfohubPanel extends HTMLElement {
         .map(
           (p) => `
         <div class="panel-row ${p.id === this._selectedId ? "selected" : ""}" data-id="${p.id}">
-          <span class="name">${_escape(p.name)} ${p.is_default ? '<span class="badge">Standard</span>' : ""}</span>
-          <button class="icon-button" data-delete="${p.id}" title="Löschen">✕</button>
+          <span class="name">${_escape(p.name)} ${p.is_default ? `<span class="badge">${t.standard}</span>` : ""}</span>
+          <button class="icon-button" data-delete="${p.id}" title="${t.delete}">✕</button>
         </div>`
         )
-        .join("") || '<div class="hint">Noch keine Panels.</div>';
+        .join("") || `<div class="hint">${t.noPanels}</div>`;
 
     listEl.querySelectorAll(".panel-row").forEach((row) => {
       row.addEventListener("click", (ev) => {
@@ -445,66 +565,39 @@ class InfohubPanel extends HTMLElement {
   }
 
   _renderEditor(panel) {
+    const t = STRINGS[this._lang()];
     const editor = this.querySelector("#panel-editor");
     if (!panel) {
-      editor.innerHTML = '<div class="hint">Panel links auswählen oder anlegen.</div>';
+      editor.innerHTML = `<div class="hint">${t.selectOrCreatePanel}</div>`;
       return;
     }
 
-    const entities = panel.entities || [];
+    const language = panel.language || "en";
     editor.innerHTML = `
       <div style="display:flex; align-items:center; gap:16px; margin-bottom:16px; flex-wrap: wrap;">
         <input type="text" id="edit-name" value="${_escapeAttr(panel.name)}" />
         <label class="hint">
           <input type="checkbox" id="edit-default" ${panel.is_default ? "checked" : ""} />
-          Standard-Panel (Fallback für nicht zugeordnete Displays)
+          ${t.defaultPanelLabel}
         </label>
         <label class="hint">
-          Zugeordnetes Display
-          <select id="edit-device"><option value="">Lädt…</option></select>
+          ${t.assignedDevice}
+          <select id="edit-device"><option value="">${t.loading}</option></select>
+        </label>
+        <label class="hint">
+          ${t.displayLanguage}
+          <select id="edit-language">
+            <option value="de" ${language === "de" ? "selected" : ""}>Deutsch</option>
+            <option value="en" ${language === "en" ? "selected" : ""}>English</option>
+          </select>
         </label>
       </div>
 
-      <h3>Widgets</h3>
+      <h3>${t.widgetsHeading}</h3>
       <div class="widget-palette" id="widget-palette"></div>
       <div id="grid-wrap"></div>
       <div id="widget-options"></div>
-
-      <h3>Entities</h3>
-      <table class="entity-table">
-        <thead>
-          <tr><th>Entity</th><th>Gruppe</th><th>Label</th><th>Einheit</th><th>Wetter</th><th></th></tr>
-        </thead>
-        <tbody id="entity-rows">
-          ${entities
-            .map(
-              (e, i) => `
-            <tr>
-              <td>${_escape(e.entity_id)}</td>
-              <td>${_escape(e.group)}</td>
-              <td>${_escape(e.label || "")}</td>
-              <td>${_escape(e.unit || "")}</td>
-              <td>${e.type === "weather" ? "✓" : ""}</td>
-              <td><button class="icon-button" data-remove="${i}">✕</button></td>
-            </tr>`
-            )
-            .join("")}
-        </tbody>
-      </table>
-      <div class="entity-add-row">
-        <ha-entity-picker id="new-entity-picker"></ha-entity-picker>
-        <select id="new-entity-group">
-          ${ENTITY_GROUPS.map((g) => `<option value="${g.value}">${g.label}</option>`).join("")}
-        </select>
-        <input type="text" id="new-entity-label" placeholder="Label" />
-        <input type="text" id="new-entity-unit" placeholder="Einheit" />
-        <label class="hint"><input type="checkbox" id="new-entity-weather" /> Wetter</label>
-        <button id="new-entity-add">+ Hinzufügen</button>
-      </div>
     `;
-
-    const picker = editor.querySelector("#new-entity-picker");
-    picker.hass = this._hass;
 
     editor.querySelector("#edit-name").addEventListener("change", (ev) => {
       this._renamePanel(panel.id, ev.target.value);
@@ -512,25 +605,14 @@ class InfohubPanel extends HTMLElement {
     editor.querySelector("#edit-default").addEventListener("change", (ev) => {
       if (ev.target.checked) this._setDefaultPanel(panel.id);
     });
+    editor.querySelector("#edit-language").addEventListener("change", (ev) => {
+      this._setLanguage(panel.id, ev.target.value);
+    });
     this._populateDeviceSelect(panel);
-    editor.querySelectorAll("[data-remove]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        this._removeEntity(panel.id, parseInt(btn.dataset.remove, 10));
-      });
-    });
-    editor.querySelector("#new-entity-add").addEventListener("click", () => {
-      const entityId = picker.value;
-      if (!entityId) return;
-      const group = editor.querySelector("#new-entity-group").value;
-      const label = editor.querySelector("#new-entity-label").value || entityId;
-      const unit = editor.querySelector("#new-entity-unit").value || null;
-      const isWeather = editor.querySelector("#new-entity-weather").checked;
-      this._addEntity(panel.id, { entity_id: entityId, group, label, unit, type: isWeather ? "weather" : null });
-    });
 
     const palette = editor.querySelector("#widget-palette");
     palette.innerHTML = Object.entries(WIDGET_CATALOG)
-      .map(([type, cat]) => `<button data-add="${type}">+ ${_escape(cat.label)}</button>`)
+      .map(([type, cat]) => `<button data-add="${type}">+ ${_escape(cat.label[this._lang()])}</button>`)
       .join("");
     palette.querySelectorAll("[data-add]").forEach((btn) => {
       btn.addEventListener("click", () => this._addWidget(panel.id, btn.dataset.add));
@@ -540,6 +622,7 @@ class InfohubPanel extends HTMLElement {
   }
 
   async _populateDeviceSelect(panel) {
+    const t = STRINGS[this._lang()];
     const devices = await this._loadKnownDevices();
     // Der Editor kann inzwischen neu gerendert oder ein anderes Panel
     // ausgewaehlt worden sein - dann gibt es das Element nicht mehr
@@ -548,12 +631,12 @@ class InfohubPanel extends HTMLElement {
     if (!select) return;
 
     if (!devices.length) {
-      select.innerHTML = '<option value="">Noch kein Display verbunden</option>';
+      select.innerHTML = `<option value="">${t.noDeviceConnected}</option>`;
       return;
     }
 
     const options = [
-      `<option value="">— kein festes Gerät (Standard-Panel) —</option>`,
+      `<option value="">${t.noFixedDevice}</option>`,
       ...devices.map(
         (d) =>
           `<option value="${_escapeAttr(d.device_id)}" ${
@@ -571,19 +654,20 @@ class InfohubPanel extends HTMLElement {
     const wrap = this.querySelector("#grid-wrap");
     if (!wrap) return;
 
+    const lang = this._lang();
     const widgets = panel.widgets || [];
     wrap.innerHTML = `<div class="grid-canvas" id="grid-canvas"></div>`;
     const canvas = wrap.querySelector("#grid-canvas");
 
     for (const widget of widgets) {
-      const catalog = WIDGET_CATALOG[widget.type] || { label: widget.type };
+      const catalog = WIDGET_CATALOG[widget.type] || { label: { de: widget.type, en: widget.type } };
       const el = document.createElement("div");
       el.className = "widget-box" + (widget.id === this._selectedWidgetId ? " selected" : "");
       el.style.left = widget.pos.col * CELL_PX + "px";
       el.style.top = widget.pos.row * CELL_PX + "px";
       el.style.width = widget.pos.colspan * CELL_PX + "px";
       el.style.height = widget.pos.rowspan * CELL_PX + "px";
-      el.textContent = catalog.label;
+      el.textContent = catalog.label[lang];
       el.dataset.id = widget.id;
 
       const removeBtn = document.createElement("button");
@@ -702,41 +786,90 @@ class InfohubPanel extends HTMLElement {
   }
 
   _renderWidgetOptions(panel, widget) {
+    const t = STRINGS[this._lang()];
+    const lang = this._lang();
     const box = this.querySelector("#widget-options");
     if (!box) return;
     if (!widget) {
-      box.innerHTML = '<div class="hint">Widget anklicken, um Optionen zu bearbeiten.</div>';
+      box.innerHTML = `<div class="hint">${t.clickWidgetHint}</div>`;
       return;
     }
+    const widgetLabel = WIDGET_CATALOG[widget.type]?.label[lang] || widget.type;
     const schema = (WIDGET_CATALOG[widget.type] || {}).options || {};
     const entries = Object.entries(schema);
-    if (!entries.length) {
-      box.innerHTML = `<div class="hint">${_escape(WIDGET_CATALOG[widget.type]?.label || widget.type)} hat keine Optionen.</div>`;
-      return;
+
+    const optionsHtml = entries.length
+      ? `
+        <div class="hint">${_escape(t.optionsFor(widgetLabel))}</div>
+        <div class="options-form">
+          ${entries
+            .map(([name, field]) => {
+              const optionLabel = (OPTION_LABELS[name] && OPTION_LABELS[name][lang]) || name;
+              const value = widget.options ? widget.options[name] : undefined;
+              const current = value === undefined ? field.default : value;
+              if (field.type === "bool") {
+                return `<label>${_escape(optionLabel)}<input type="checkbox" data-opt="${name}" data-opt-type="bool" ${current ? "checked" : ""} /></label>`;
+              }
+              if (field.type === "select") {
+                return `<label>${_escape(optionLabel)}<select data-opt="${name}" data-opt-type="select">${(field.choices || [])
+                  .map((c) => `<option value="${_escapeAttr(c)}" ${c === current ? "selected" : ""}>${_escape(c)}</option>`)
+                  .join("")}</select></label>`;
+              }
+              return `<label>${_escape(optionLabel)}<input type="number" data-opt="${name}" data-opt-type="number" value="${_escapeAttr(current)}" ${
+                field.min !== undefined ? `min="${field.min}"` : ""
+              } ${field.max !== undefined ? `max="${field.max}"` : ""} /></label>`;
+            })
+            .join("")}
+        </div>
+      `
+      : `<div class="hint">${_escape(t.noOptions(widgetLabel))}</div>`;
+
+    // Entities are shown per-widget (only those feeding the group this
+    // widget type reads from - see WIDGET_GROUPS), not as one flat list
+    // of everything the panel happens to use.
+    const group = WIDGET_GROUPS[widget.type];
+    let entitiesHtml;
+    if (!group) {
+      entitiesHtml = `<div class="hint" style="margin-top:16px;">${t.noEntitiesForWidget}</div>`;
+    } else if (group === "kalender") {
+      entitiesHtml = `<div class="hint" style="margin-top:16px;">${t.calendarEntityHint}</div>`;
+    } else {
+      const showWeatherCol = group === "wetter";
+      const indexed = (panel.entities || [])
+        .map((e, i) => ({ e, i }))
+        .filter(({ e }) => e.group === group);
+      entitiesHtml = `
+        <div class="hint" style="margin-top:16px;">${_escape(t.entitiesFor(widgetLabel))}</div>
+        <table class="entity-table">
+          <thead>
+            <tr><th>${t.colEntity}</th><th>${t.colLabel}</th><th>${t.colUnit}</th>${showWeatherCol ? `<th>${t.colWeather}</th>` : ""}<th></th></tr>
+          </thead>
+          <tbody>
+            ${indexed
+              .map(
+                ({ e, i }) => `
+              <tr>
+                <td>${_escape(e.entity_id)}</td>
+                <td>${_escape(e.label || "")}</td>
+                <td>${_escape(e.unit || "")}</td>
+                ${showWeatherCol ? `<td>${e.type === "weather" ? "✓" : ""}</td>` : ""}
+                <td><button class="icon-button" data-remove-entity="${i}">✕</button></td>
+              </tr>`
+              )
+              .join("")}
+          </tbody>
+        </table>
+        <div class="entity-add-row">
+          <ha-entity-picker id="widget-entity-picker"></ha-entity-picker>
+          <input type="text" id="widget-entity-label" placeholder="${t.placeholderLabel}" />
+          <input type="text" id="widget-entity-unit" placeholder="${t.placeholderUnit}" />
+          ${showWeatherCol ? `<label class="hint"><input type="checkbox" id="widget-entity-weather" /> ${t.weatherCheckbox}</label>` : "<span></span>"}
+          <button id="widget-entity-add">${t.addEntity}</button>
+        </div>
+      `;
     }
 
-    box.innerHTML = `
-      <div class="hint">Optionen: ${_escape(WIDGET_CATALOG[widget.type]?.label || widget.type)}</div>
-      <div class="options-form">
-        ${entries
-          .map(([name, field]) => {
-            const value = widget.options ? widget.options[name] : undefined;
-            const current = value === undefined ? field.default : value;
-            if (field.type === "bool") {
-              return `<label>${_escape(name)}<input type="checkbox" data-opt="${name}" data-opt-type="bool" ${current ? "checked" : ""} /></label>`;
-            }
-            if (field.type === "select") {
-              return `<label>${_escape(name)}<select data-opt="${name}" data-opt-type="select">${(field.choices || [])
-                .map((c) => `<option value="${_escapeAttr(c)}" ${c === current ? "selected" : ""}>${_escape(c)}</option>`)
-                .join("")}</select></label>`;
-            }
-            return `<label>${_escape(name)}<input type="number" data-opt="${name}" data-opt-type="number" value="${_escapeAttr(current)}" ${
-              field.min !== undefined ? `min="${field.min}"` : ""
-            } ${field.max !== undefined ? `max="${field.max}"` : ""} /></label>`;
-          })
-          .join("")}
-      </div>
-    `;
+    box.innerHTML = optionsHtml + entitiesHtml;
 
     box.querySelectorAll("[data-opt]").forEach((input) => {
       input.addEventListener("change", () => {
@@ -748,6 +881,31 @@ class InfohubPanel extends HTMLElement {
         this._updateWidgetOptions(panel.id, widget.id, { [name]: value });
       });
     });
+
+    if (group && group !== "kalender") {
+      box.querySelectorAll("[data-remove-entity]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          this._removeEntity(panel.id, parseInt(btn.dataset.removeEntity, 10));
+        });
+      });
+      const picker = box.querySelector("#widget-entity-picker");
+      picker.hass = this._hass;
+      box.querySelector("#widget-entity-add").addEventListener("click", () => {
+        const entityId = picker.value;
+        if (!entityId) return;
+        const label = box.querySelector("#widget-entity-label").value || entityId;
+        const unit = box.querySelector("#widget-entity-unit").value || null;
+        const weatherCheckbox = box.querySelector("#widget-entity-weather");
+        const isWeather = weatherCheckbox ? weatherCheckbox.checked : false;
+        this._addEntity(panel.id, {
+          entity_id: entityId,
+          group,
+          label,
+          unit,
+          type: isWeather ? "weather" : null,
+        });
+      });
+    }
   }
 }
 
