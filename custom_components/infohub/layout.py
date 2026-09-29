@@ -152,9 +152,16 @@ class Layout:
 def _widget_label(
     widget: dict[str, Any], entities_by_id: dict[str, dict[str, Any]], language: str
 ) -> str:
-    """A widget's display label - the bound entity's own label for
-    value_tile (falling back to the generic type label until an entity
-    is picked), otherwise just the type's catalog label."""
+    """A widget's display label.
+
+    A user-set `alias` (a plain field on the widget, like `pos` - not a
+    type-specific "option") always wins if present. Otherwise: the bound
+    entity's own label for value_tile (falling back to the generic type
+    label until an entity is picked), or just the type's catalog label.
+    """
+    alias = (widget.get("alias") or "").strip()
+    if alias:
+        return alias
     if widget["type"] == WIDGET_VALUE_TILE:
         entity_id = widget.get("options", {}).get("entity_id")
         entity = entities_by_id.get(entity_id) if entity_id else None

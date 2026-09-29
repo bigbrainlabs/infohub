@@ -47,6 +47,7 @@ const STRINGS = {
     noDeviceConnected: "Noch kein Display verbunden",
     noFixedDevice: "— kein festes Gerät (Standard-Panel) —",
     widgetsHeading: "Widgets",
+    aliasLabel: "Anzeigename (überschreibt den Standardtitel)",
     colEntity: "Entity",
     colLabel: "Label",
     colUnit: "Einheit",
@@ -81,6 +82,7 @@ const STRINGS = {
     noDeviceConnected: "No display connected yet",
     noFixedDevice: "— no fixed device (default panel) —",
     widgetsHeading: "Widgets",
+    aliasLabel: "Display name (overrides the default title)",
     colEntity: "Entity",
     colLabel: "Label",
     colUnit: "Unit",
@@ -419,6 +421,15 @@ class InfohubPanel extends HTMLElement {
     await this._saveWidgets(panelId, widgets);
   }
 
+  async _updateWidgetAlias(panelId, widgetId, alias) {
+    const panel = this._panels[panelId];
+    const widgets = (panel.widgets || []).map((w) => (w.id === widgetId ? { ...w, alias } : w));
+    const updated = await this._saveWidgets(panelId, widgets);
+    // Canvas box text shows the alias too (see _renderWidgetEditor) - a
+    // full editor rerender isn't needed, just the canvas.
+    this._renderWidgetEditor(updated);
+  }
+
   // -- Rendering ------------------------------------------------------------
 
   _render() {
@@ -742,7 +753,7 @@ class InfohubPanel extends HTMLElement {
       el.style.top = widget.pos.row * CELL_PX + "px";
       el.style.width = widget.pos.colspan * CELL_PX + "px";
       el.style.height = widget.pos.rowspan * CELL_PX + "px";
-      el.textContent = catalog.label[lang];
+      el.textContent = widget.alias || catalog.label[lang];
       el.dataset.id = widget.id;
 
       const removeBtn = document.createElement("button");
@@ -870,6 +881,11 @@ class InfohubPanel extends HTMLElement {
       return;
     }
     const widgetLabel = WIDGET_CATALOG[widget.type]?.label[lang] || widget.type;
+    const aliasHtml = `
+      <div class="options-form" style="max-width:320px;">
+        <label>${t.aliasLabel}<input type="text" id="widget-alias-input" value="${_escapeAttr(widget.alias || "")}" placeholder="${_escapeAttr(widgetLabel)}" /></label>
+      </div>
+    `;
     const schema = (WIDGET_CATALOG[widget.type] || {}).options || {};
     const entries = Object.entries(schema);
     // Widget's own data group (see WIDGET_GROUPS) - both for the entity
@@ -951,7 +967,11 @@ class InfohubPanel extends HTMLElement {
       `;
     }
 
-    box.innerHTML = optionsHtml + entitiesHtml;
+    box.innerHTML = aliasHtml + optionsHtml + entitiesHtml;
+
+    box.querySelector("#widget-alias-input").addEventListener("change", (ev) => {
+      this._updateWidgetAlias(panel.id, widget.id, ev.target.value.trim() || null);
+    });
 
     box.querySelectorAll("[data-opt]").forEach((input) => {
       input.addEventListener("change", () => {
