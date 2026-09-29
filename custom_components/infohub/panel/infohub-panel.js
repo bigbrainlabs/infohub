@@ -333,6 +333,14 @@ class InfohubPanel extends HTMLElement {
     this._render();
   }
 
+  async _updateEntity(panelId, index, patch) {
+    const panel = this._panels[panelId];
+    const entities = (panel.entities || []).map((e, i) => (i === index ? { ...e, ...patch } : e));
+    const updated = await this._call("infohub/panel/update", { panel_id: panelId, entities });
+    this._panels[updated.id] = updated;
+    this._render();
+  }
+
   // -- Widgets (layout editor) ---------------------------------------------
 
   async _saveWidgets(panelId, widgets) {
@@ -456,6 +464,7 @@ class InfohubPanel extends HTMLElement {
           text-align: left;
           font-size: 14px;
         }
+        table.entity-table ha-entity-picker { min-width: 220px; display: block; }
         .entity-add-row {
           display: grid;
           grid-template-columns: 2fr 1fr 1fr auto auto;
@@ -849,7 +858,7 @@ class InfohubPanel extends HTMLElement {
               .map(
                 ({ e, i }) => `
               <tr>
-                <td>${_escape(e.entity_id)}</td>
+                <td><ha-entity-picker class="inline-entity-picker" data-index="${i}"></ha-entity-picker></td>
                 <td>${_escape(e.label || "")}</td>
                 <td>${_escape(e.unit || "")}</td>
                 ${showWeatherCol ? `<td>${e.type === "weather" ? "✓" : ""}</td>` : ""}
@@ -886,6 +895,17 @@ class InfohubPanel extends HTMLElement {
       box.querySelectorAll("[data-remove-entity]").forEach((btn) => {
         btn.addEventListener("click", () => {
           this._removeEntity(panel.id, parseInt(btn.dataset.removeEntity, 10));
+        });
+      });
+      box.querySelectorAll(".inline-entity-picker").forEach((inlinePicker) => {
+        const index = parseInt(inlinePicker.dataset.index, 10);
+        const current = (panel.entities || [])[index];
+        inlinePicker.hass = this._hass;
+        if (current) inlinePicker.value = current.entity_id;
+        inlinePicker.addEventListener("value-changed", (ev) => {
+          const newEntityId = ev.detail.value;
+          if (!newEntityId || (current && newEntityId === current.entity_id)) return;
+          this._updateEntity(panel.id, index, { entity_id: newEntityId });
         });
       });
       const picker = box.querySelector("#widget-entity-picker");
