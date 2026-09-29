@@ -1,0 +1,32 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up InfoHub",
+        "description": "WebSocket port InfoHub uses to serve layout and data to display clients.",
+        "data": {
+          "ws_port": "WebSocket port"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "InfoHub is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "InfoHub settings",
+        "description": "Entities and screens per display are now managed via the InfoHub panel in the sidebar. Leave the GTS postal code or the calendar entity empty to disable that lookup.",
+        "data": {
+          "ws_port": "WebSocket port",
+          "gts_plz": "GTS postal code",
+          "gts_country": "GTS country",
+          "gts_poll_interval": "GTS poll interval (seconds)",
+          "calendar_entity_id": "Google Calendar entity",
+          "calendar_poll_interval": "Calendar poll interval (seconds)"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "InfoHub einrichten",
+        "description": "WebSocket-Port, auf dem InfoHub Display-Clients Layout und Daten bereitstellt.",
+        "data": {
+          "ws_port": "WebSocket-Port"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "InfoHub ist bereits eingerichtet."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "InfoHub-Einstellungen",
+        "description": "Entities und Screens je Display werden jetzt über das InfoHub-Panel in der Seitenleiste verwaltet. GTS-PLZ bzw. Kalender-Entity leer lassen, um die jeweilige Abfrage zu deaktivieren.",
+        "data": {
+          "ws_port": "WebSocket-Port",
+          "gts_plz": "GTS-PLZ",
+          "gts_country": "GTS-Land",
+          "gts_poll_interval": "GTS-Abfrageintervall (Sekunden)",
+          "calendar_entity_id": "Google-Kalender-Entity",
+          "calendar_poll_interval": "Kalender-Abfrageintervall (Sekunden)"
+        }
+      }
+    }
+  }
+}

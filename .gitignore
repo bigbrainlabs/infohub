@@ -1,0 +1,16 @@
+# Secrets - never commit
+config.yaml
+*.apps.googleusercontent.com.json
+client_secret*.json
+
+# Python
+__pycache__/
+*.pyc
+
+# Editor / tooling
+.claude/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
