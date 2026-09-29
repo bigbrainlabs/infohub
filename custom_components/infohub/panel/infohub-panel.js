@@ -457,21 +457,16 @@ class InfohubPanel extends HTMLElement {
         }
         .add-panel-btn { margin-top: 8px; width: 100%; }
         h3 { font-size: 15px; font-weight: 500; margin: 20px 0 8px; }
-        table.entity-table { width: 100%; border-collapse: collapse; }
-        table.entity-table td, table.entity-table th {
-          padding: 6px 4px;
-          border-bottom: 1px solid var(--divider-color);
-          text-align: left;
-          font-size: 14px;
-        }
-        table.entity-table ha-entity-picker { min-width: 220px; display: block; }
-        .entity-add-row {
+        .entity-row, .entity-add-row {
           display: grid;
           grid-template-columns: 2fr 1fr 1fr auto auto;
           gap: 6px;
           align-items: center;
-          margin-top: 12px;
+          margin-top: 8px;
         }
+        .entity-row { font-size: 14px; border-bottom: 1px solid var(--divider-color); padding-bottom: 6px; }
+        .entity-row-header { font-size: 12px; margin-top: 16px; }
+        .entity-row ha-entity-picker { min-width: 0; }
         input[type="text"], input[type="number"], select {
           padding: 6px;
           border: 1px solid var(--divider-color);
@@ -849,25 +844,23 @@ class InfohubPanel extends HTMLElement {
         .filter(({ e }) => e.group === group);
       entitiesHtml = `
         <div class="hint" style="margin-top:16px;">${_escape(t.entitiesFor(widgetLabel))}</div>
-        <table class="entity-table">
-          <thead>
-            <tr><th>${t.colEntity}</th><th>${t.colLabel}</th><th>${t.colUnit}</th>${showWeatherCol ? `<th>${t.colWeather}</th>` : ""}<th></th></tr>
-          </thead>
-          <tbody>
-            ${indexed
-              .map(
-                ({ e, i }) => `
-              <tr>
-                <td><ha-entity-picker class="inline-entity-picker" data-index="${i}"></ha-entity-picker></td>
-                <td>${_escape(e.label || "")}</td>
-                <td>${_escape(e.unit || "")}</td>
-                ${showWeatherCol ? `<td>${e.type === "weather" ? "✓" : ""}</td>` : ""}
-                <td><button class="icon-button" data-remove-entity="${i}">✕</button></td>
-              </tr>`
-              )
-              .join("")}
-          </tbody>
-        </table>
+        <div class="entity-row entity-row-header hint">
+          <span>${t.colEntity}</span><span>${t.colLabel}</span><span>${t.colUnit}</span>${showWeatherCol ? `<span>${t.colWeather}</span>` : "<span></span>"}<span></span>
+        </div>
+        <div class="entity-list">
+          ${indexed
+            .map(
+              ({ e, i }) => `
+            <div class="entity-row">
+              <ha-entity-picker class="inline-entity-picker" data-index="${i}"></ha-entity-picker>
+              <span>${_escape(e.label || "")}</span>
+              <span>${_escape(e.unit || "")}</span>
+              ${showWeatherCol ? `<span>${e.type === "weather" ? "✓" : ""}</span>` : "<span></span>"}
+              <button class="icon-button" data-remove-entity="${i}">✕</button>
+            </div>`
+            )
+            .join("")}
+        </div>
         <div class="entity-add-row">
           <ha-entity-picker id="widget-entity-picker"></ha-entity-picker>
           <input type="text" id="widget-entity-label" placeholder="${t.placeholderLabel}" />
