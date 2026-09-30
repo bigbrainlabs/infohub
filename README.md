@@ -52,8 +52,10 @@ Home Assistant
   Home Assistant's sidebar - no code, no redeploy of the display client.
 - **Widgets**: clock, current weather (with an animated day/night sky
   scene), power gauge, indoor climate, next waste collection, calendar
-  month - each with its own per-widget options (clock format/seconds,
-  weather scene on/off, gauge max value, months shown).
+  month, an Info Tile (shows any entities you assign it, one per row),
+  and Switches (same idea, but tappable toggles for controllable
+  entities) - each with its own per-widget options (clock
+  format/seconds, weather scene on/off, gauge max value, months shown).
 - **Multiple panels, multiple displays**: define as many named panel
   layouts as you like and assign each physical display to one via a
   dropdown, keyed off a stable per-device ID.
@@ -110,8 +112,11 @@ layout:
 
 Live data then streams as `full_update` (initial snapshot / bulk
 changes) and `entity_update` (single-entity changes), grouped by the
-same group keys (`wetter`, `strom`, `abfall`, `raumklima`, `kalender`)
-used in the layout's `data_source` fields.
+same group keys (`wetter`, `strom`, `abfall`, `raumklima`, `kalender`,
+plus `custom` and `aktoren` for the Info Tile and Switches widgets)
+used in the layout's `data_source` fields. Switches also accept an
+`action` message from the client to toggle an entity - see
+`websocket_server.py`.
 
 ## License
 
