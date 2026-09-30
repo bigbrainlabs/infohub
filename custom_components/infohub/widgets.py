@@ -26,12 +26,17 @@ WIDGET_POWER_GAUGE = "power_gauge"
 WIDGET_WASTE_NEXT = "waste_next"
 WIDGET_INDOOR_CLIMATE = "indoor_climate"
 WIDGET_CALENDAR_MONTH = "calendar_month"
-# Generic widget: shows one entity the user picks (its "entity_id"
-# option) from the shared "custom" entity group (const.GROUP_CUSTOM) -
-# unlike the other types, which each read every entity of their own
-# fixed group. Lets the widget gallery grow to "any HA entity" without
-# a new hardcoded type/renderer per kind of information.
+# Generic widget: shows every entity in the shared "custom" group
+# (const.GROUP_CUSTOM), one per row - lets the widget gallery grow to
+# "any HA entity" without a new hardcoded type/renderer per kind of
+# information. Which entities appear is controlled by the entity table
+# itself, not a per-widget option.
 WIDGET_VALUE_TILE = "value_tile"
+# Same one-row-per-entity idea as value_tile, but for the "aktoren"
+# group (const.GROUP_AKTOREN) and each row is a tappable toggle instead
+# of a read-only value - the first (and so far only) actuator/control
+# widget type. See websocket_server.py's action handling.
+WIDGET_SWITCH_TILE = "switch_tile"
 
 # Bilingual widget display names - keyed by wire language code ("de"/"en",
 # see const.LANGUAGE_CHOICES). layout.py's layout_from_panel() resolves
@@ -47,6 +52,7 @@ WIDGET_LABELS: dict[str, dict[str, str]] = {
     WIDGET_WASTE_NEXT: {"de": "Abfall", "en": "Waste"},
     WIDGET_CALENDAR_MONTH: {"de": "Kalender", "en": "Calendar"},
     WIDGET_VALUE_TILE: {"de": "Info-Kachel", "en": "Info Tile"},
+    WIDGET_SWITCH_TILE: {"de": "Schalter", "en": "Switches"},
 }
 
 # default_size = (colspan, rowspan) in grid units, used when a widget is
@@ -92,6 +98,10 @@ WIDGET_CATALOG: dict[str, dict[str, Any]] = {
         # currently in the panel's GROUP_CUSTOM list, one per row (see
         # layout.py's data_source and the client's update_custom()).
         # Picking a subset is what the entity table itself is for.
+        "options": {},
+    },
+    WIDGET_SWITCH_TILE: {
+        "default_size": (7, 6),
         "options": {},
     },
 }

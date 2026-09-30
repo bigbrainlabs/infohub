@@ -20,13 +20,20 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from .const import DEFAULT_LANGUAGE, GROUP_CUSTOM, PROTOCOL_VERSION
-from .widgets import GRID_COLS, GRID_ROWS, WIDGET_VALUE_TILE, widget_label
+from .const import DEFAULT_LANGUAGE, GROUP_AKTOREN, GROUP_CUSTOM, PROTOCOL_VERSION
+from .widgets import (
+    GRID_COLS,
+    GRID_ROWS,
+    WIDGET_SWITCH_TILE,
+    WIDGET_VALUE_TILE,
+    widget_label,
+)
 
 # Which full_update data group each widget type reads from. "clock" has
-# none - it renders local time, not HA state. "value_tile" reads all of
-# GROUP_CUSTOM (every entity in it, one per row) rather than a fixed set
-# of specific ones like the other types - see the client's update_custom().
+# none - it renders local time, not HA state. "value_tile"/"switch_tile"
+# each read all of their own group (every entity in it, one per row)
+# rather than a fixed set of specific ones like the other types - see
+# the client's update_custom()/update_aktoren().
 _TYPE_TO_GROUP = {
     "weather_current": "wetter",
     "power_gauge": "strom",
@@ -34,6 +41,7 @@ _TYPE_TO_GROUP = {
     "indoor_climate": "raumklima",
     "calendar_month": "kalender",
     WIDGET_VALUE_TILE: GROUP_CUSTOM,
+    WIDGET_SWITCH_TILE: GROUP_AKTOREN,
 }
 
 _SCREEN_LABELS = {"de": "Übersicht", "en": "Overview"}

@@ -116,6 +116,7 @@ const WIDGET_GROUPS = {
   indoor_climate: "raumklima",
   calendar_month: "kalender",
   value_tile: "custom",
+  switch_tile: "aktoren",
 };
 
 // Mirrors custom_components/infohub/widgets.py's WIDGET_CATALOG. Option
@@ -162,6 +163,15 @@ const WIDGET_CATALOG = {
   // entity" without a new hardcoded type/renderer per kind of info.
   value_tile: {
     label: { de: "Info-Kachel", en: "Info Tile" },
+    default_size: [7, 6],
+    options: {},
+  },
+  // Same one-row-per-entity idea as value_tile, for the "aktoren" group -
+  // but each row is a tappable toggle switch on the physical display
+  // (rendering/tap-handling lives in main_mp.py, nothing to configure
+  // here beyond which entities are in the group).
+  switch_tile: {
+    label: { de: "Schalter", en: "Switches" },
     default_size: [7, 6],
     options: {},
   },
@@ -544,6 +554,14 @@ class InfohubPanel extends HTMLElement {
         .widget-preview-calendar_month .mock-grid { display: grid; grid-template-columns: repeat(5, 7px); gap: 2px; }
         .widget-preview-calendar_month .mock-grid span { width: 7px; height: 7px; background: #4a4a6a; border-radius: 1px; }
         .widget-preview-value_tile { border: 1px dashed #4a4a6a; font-size: 20px; }
+        .widget-preview-switch_tile .mock-switch {
+          width: 34px; height: 18px; border-radius: 10px;
+          background: #22c55e; position: relative;
+        }
+        .widget-preview-switch_tile .mock-switch::after {
+          content: ""; position: absolute; top: 2px; right: 2px;
+          width: 14px; height: 14px; border-radius: 50%; background: #fff;
+        }
         .grid-canvas {
           position: relative;
           width: ${GRID_COLS * CELL_PX}px;
@@ -1026,6 +1044,8 @@ function _widgetPreviewContent(type) {
       return '<div class="mock-grid">' + "<span></span>".repeat(10) + "</div>";
     case "value_tile":
       return "⚙️";
+    case "switch_tile":
+      return '<div class="mock-switch"></div>';
     default:
       return "";
   }

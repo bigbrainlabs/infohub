@@ -12,6 +12,16 @@ Sends two independent message streams to connected clients:
   too - a widget only ever reads the group it cares about, so the extra
   groups a given display's layout doesn't use are simply unused there).
 
+Also accepts one message type *from* clients: `{"type": "action",
+"entity_id": ..., "command": "toggle"}` (see _handle_client_message()),
+for actuator widgets (switch_tile) - the display taps a switch, this
+server hands it to an injected handler (configure_action_handler()) that
+the integration wires up to allowlist-check it and call a Home Assistant
+service. This is the one place the "clients need no HA auth" design
+(below) has a real consequence: anything reachable on this port can send
+one, bounded only by the allowlist - see the actuator-widget plan's
+"Bekannte offene Punkte" for the known gap.
+
 Runs as its own asyncio server on its own port (not embedded in Home
 Assistant's HTTP server), so display clients need no HA auth/session
 handling - they just open a plain websocket connection.
@@ -30,7 +40,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 
 import websockets
 from websockets.server import WebSocketServerProtocol
@@ -42,6 +52,11 @@ logger = logging.getLogger(__name__)
 HELLO_TIMEOUT = 2.0
 
 ResolvePanelFn = Callable[[str | None], "str | None"]
+# (entity_id, command) -> None. The integration (__init__.py) injects one
+# that allowlist-checks entity_id against configured "aktoren" entities
+# before calling any Home Assistant service - this server only parses the
+# wire message and hands it off, it has no opinion on what's allowed.
+ActionHandlerFn = Callable[[str, str], Awaitable[None]]
 
 
 class InfoHubWebSocketServer:
@@ -60,6 +75,7 @@ class InfoHubWebSocketServer:
         self._resolve_panel: ResolvePanelFn | None = None
         self._connections: dict[WebSocketServerProtocol, str | None] = {}
         self._known_devices: dict[str, str] = {}
+        self._on_action: ActionHandlerFn | None = None
 
     async def start(self) -> None:
         """Starts the WebSocket server."""
@@ -109,6 +125,10 @@ class InfoHubWebSocketServer:
         for websocket, device_id in list(self._connections.items()):
             await self._send_layout_for(websocket, device_id)
 
+    def configure_action_handler(self, on_action: ActionHandlerFn) -> None:
+        """Sets the callback invoked for incoming client `action` messages."""
+        self._on_action = on_action
+
     def get_known_devices(self) -> list[dict[str, Any]]:
         """Devices that have identified themselves at least once (for the panel dropdown)."""
         return [
@@ -142,7 +162,7 @@ class InfoHubWebSocketServer:
             self._clients.add(websocket)
 
             async for message in websocket:
-                logger.debug("Nachricht von %s: %s", client_addr, message)
+                await self._handle_client_message(client_addr, message)
         except websockets.ConnectionClosed:
             logger.info("Client getrennt: %s", client_addr)
         finally:
@@ -164,6 +184,37 @@ class InfoHubWebSocketServer:
         except (TimeoutError, ValueError, websockets.ConnectionClosed):
             pass
         return None
+
+    async def _handle_client_message(self, client_addr: Any, message: str) -> None:
+        """Handles one message from an already-connected client.
+
+        Only `{"type": "action", "entity_id": ..., "command": "toggle"}` is
+        currently understood - a closed vocabulary on purpose, not a
+        generic service-call passthrough (see __init__.py's allowlist
+        check in the injected handler). Anything else is just logged, same
+        as before this existed.
+        """
+        try:
+            data = json.loads(message)
+        except ValueError:
+            logger.debug("Ungueltige Nachricht von %s: %s", client_addr, message)
+            return
+
+        if data.get("type") != "action":
+            logger.debug("Nachricht von %s: %s", client_addr, message)
+            return
+
+        entity_id = data.get("entity_id")
+        command = data.get("command")
+        if not entity_id or not command:
+            logger.warning("Unvollstaendige Action von %s: %s", client_addr, data)
+            return
+        if self._on_action is None:
+            logger.warning("Action von %s erhalten, aber kein Handler konfiguriert", client_addr)
+            return
+
+        logger.info("Action von %s: %s %s", client_addr, command, entity_id)
+        await self._on_action(entity_id, command)
 
     def _layout_for_device(self, device_id: str | None) -> Layout | None:
         panel_id = self._resolve_panel(device_id) if self._resolve_panel else None

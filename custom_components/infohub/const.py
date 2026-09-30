@@ -38,11 +38,14 @@ GROUP_ABFALL = "abfall"
 GROUP_RAUMKLIMA = "raumklima"
 GROUP_KALENDER = "kalender"
 # Backing group for the generic "value_tile" widget type (widgets.py) -
-# any entity added here can be picked, per value_tile instance, via that
-# widget's own "entity_id" option. Unlike the other groups it isn't tied
-# to one specific widget type 1:1; several value_tile widgets can share
-# this same pool and each pick a different entity from it.
+# every entity added here shows up as its own row on the widget, no
+# per-instance selection (see layout.py/widgets.py).
 GROUP_CUSTOM = "custom"
+# Backing group for the "switch_tile" widget type - same one-row-per-
+# entity rendering as GROUP_CUSTOM, but each row is a tappable toggle
+# instead of a read-only value (see websocket_server.py's action
+# handling and the client's update_aktoren()).
+GROUP_AKTOREN = "aktoren"
 
 # Per-panel display language - controls what's actually rendered on the
 # physical display (widget titles, weekday/month names, weather terms in

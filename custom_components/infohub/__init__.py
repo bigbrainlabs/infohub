@@ -45,6 +45,7 @@ from .const import (
     DEFAULT_GTS_POLL_INTERVAL,
     DEFAULT_WS_PORT,
     DOMAIN,
+    GROUP_AKTOREN,
 )
 from .coordinator import InfoHubCoordinator
 from .entities import build_entity_groups
@@ -87,8 +88,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # damit spaeter angelegte/geaenderte Zuordnungen sofort gelten.
         return resolve_panel_id(panel_collection.async_items(), device_id)
 
+    async def _resolve_action(entity_id: str, command: str) -> None:
+        # Allowlist: nur Entities, die jemand explizit zur "aktoren"-
+        # Gruppe eines Panels hinzugefuegt hat, sind ueberhaupt schaltbar -
+        # der WS-Server selbst hat keine Auth, das begrenzt zumindest den
+        # Schaden (kein beliebiger Service-Call auf x-beliebige Entities).
+        allowed_ids = {
+            e["entity_id"]
+            for e in union_panel_entities(panel_collection.async_items())
+            if e.get("group") == GROUP_AKTOREN
+        }
+        if entity_id not in allowed_ids:
+            logger.warning("Action fuer nicht freigegebene Entity ignoriert: %s", entity_id)
+            return
+        if command != "toggle":
+            logger.warning("Unbekanntes Action-Kommando ignoriert: %s", command)
+            return
+        await hass.services.async_call(
+            "homeassistant", "toggle", {"entity_id": entity_id}, blocking=False
+        )
+
     server = InfoHubWebSocketServer(host="0.0.0.0", port=port)
     server.configure_panels(_build_layouts(panels), default_panel_id, _resolve_panel)
+    server.configure_action_handler(_resolve_action)
     await server.start()
 
     coordinator = InfoHubCoordinator(

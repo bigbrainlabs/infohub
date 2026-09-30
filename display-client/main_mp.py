@@ -9,6 +9,8 @@ import json
 import asyncio
 import socket
 import random
+import select
+import ustruct
 
 # Configuration - set INFOHUB_HOST to your Home Assistant host's IP
 # (or hostname, if your network resolves it) before deploying.
@@ -17,6 +19,37 @@ INFOHUB_PORT = 8765
 DISPLAY_WIDTH = 1920
 DISPLAY_HEIGHT = 1200
 HEADER_HEIGHT = 80
+
+# Raw evdev touch device - NOT read via evdev.mouse_indev() (the
+# lv_micropython binding's only built-in input helper): that only
+# understands the legacy single-packet PS/2 mouse protocol on
+# /dev/input/mice, but this touch controller boots into a real
+# HID-multitouch mode the mousedev compat layer doesn't translate at
+# all - confirmed live (evtest showed correct 1920x1200-calibrated
+# ABS_X/ABS_Y/BTN_TOUCH plus the full ABS_MT_* slot protocol, but
+# nothing ever reached /dev/input/mice regardless of grabs/permissions/
+# cabling). See _touch_read_cb() below - reads the classic single-touch
+# fields this device conveniently still reports alongside its full
+# multitouch protocol, which is all a single-finger UI needs.
+TOUCH_DEVICE = "/dev/input/event0"
+# struct input_event on 64-bit Linux: 2x int64 (sec, usec) + 2x uint16
+# (type, code) + int32 (value) = 24 bytes, no padding - verified live
+# (ustruct.calcsize("<qqHHi") == 24 on this device).
+_INPUT_EVENT_FMT = "<qqHHi"
+_INPUT_EVENT_SIZE = ustruct.calcsize(_INPUT_EVENT_FMT)
+_EV_KEY = 1
+_EV_ABS = 3
+_ABS_X = 0
+_ABS_Y = 1
+_BTN_TOUCH = 0x14A
+
+# Every card's title (set by _create_card() from the wire "label") sits
+# at (15, 15). Row-based widgets (update_custom()/update_aktoren()) need
+# their first row to start below that instead of also at y=15, which
+# just overlapped the title - other, hand-laid-out widgets already clear
+# it with their own per-widget positions (e.g. the strom/waste cards
+# start around y=50), this is the equivalent for the generic ones.
+CARD_CONTENT_TOP = 50
 
 # Stabile Geraete-ID, mit der sich dieser Client beim Server meldet (siehe
 # _ws_encode_frame()/"hello"-Nachricht) - der InfoHub-Sidebar-Panel kann
@@ -839,6 +872,10 @@ class InfoHubDisplay:
         self.connected = False
         self.scr = None
         self.status_label = None
+        # Set by websocket_client() once connected, cleared once closed -
+        # lets send_action() reach the live socket from a switch-tap
+        # callback without threading it through every function call.
+        self._sock = None
 
         # Weather current card refs
         self.weather_card = None
@@ -926,6 +963,12 @@ class InfoHubDisplay:
         # so rows are created/deleted on demand in update_custom().
         self._value_tiles = []
 
+        # Switch-tile refs - same idea as _value_tiles (one entry per
+        # widget instance, rows keyed by entity_id, created/deleted on
+        # demand in update_aktoren()), but each row's "value" is a
+        # tappable lv.switch instead of a read-only label.
+        self._switch_tiles = []
+
         # Clock card refs (standalone widget, see _setup_clock_card)
         self.clock_digits = []
         self.clock_colon_dots = []
@@ -983,16 +1026,64 @@ class InfoHubDisplay:
         lv.linux_fbdev_set_file(disp, "/dev/fb0")
         print("Display initialized")
         self.touch = None
+        self._touch_file = None
+        self._touch_poll = None
+        self._touch_x = 0
+        self._touch_y = 0
+        self._touch_pressed = False
 
     def init_touch(self):
-        """Initialize touch input after UI is created"""
+        """Initialize touch input after UI is created.
+
+        Custom evdev reader instead of evdev.mouse_indev() - see
+        TOUCH_DEVICE's comment for why. Registers a plain LVGL pointer
+        indev (lv.indev_create(), the same primitive mouse_indev() uses
+        internally) with our own read callback instead.
+        """
         try:
-            import evdev
-            scr = lv.screen_active()
-            self.touch = evdev.mouse_indev(scr, cursor=None, device="/dev/input/mice")
-            print("Touch input initialized: /dev/input/mice")
+            self._touch_file = open(TOUCH_DEVICE, "rb")
+            self._touch_poll = select.poll()
+            self._touch_poll.register(self._touch_file, select.POLLIN)
+
+            indev = lv.indev_create()
+            indev.set_type(lv.INDEV_TYPE.POINTER)
+            indev.set_read_cb(self._touch_read_cb)
+            self.touch = indev
+            print("Touch input initialized:", TOUCH_DEVICE)
         except Exception as e:
             print("Touch init error:", e)
+
+    def _touch_read_cb(self, indev, data):
+        """LVGL polls this every frame (~20x/sec, see the asyncio loop's
+        lv.timer_handler() call). Drains all currently-buffered raw
+        input_event records (non-blocking - self._touch_poll.poll(0)
+        returns immediately either way) updating self._touch_x/_y/
+        _pressed from ABS_X/ABS_Y/BTN_TOUCH; only the latest values
+        after draining are applied to `data`, which is all LVGL needs -
+        it doesn't process a backlog of raw samples, just "where is the
+        finger right now".
+        """
+        try:
+            while self._touch_poll.poll(0):
+                chunk = self._touch_file.read(_INPUT_EVENT_SIZE)
+                if not chunk or len(chunk) < _INPUT_EVENT_SIZE:
+                    break
+                _, _, ev_type, ev_code, value = ustruct.unpack(_INPUT_EVENT_FMT, chunk)
+                if ev_type == _EV_ABS:
+                    if ev_code == _ABS_X:
+                        self._touch_x = value
+                    elif ev_code == _ABS_Y:
+                        self._touch_y = value
+                elif ev_type == _EV_KEY and ev_code == _BTN_TOUCH:
+                    self._touch_pressed = bool(value)
+        except Exception as e:
+            print("Touch read error:", e)
+
+        data.point.x = self._touch_x
+        data.point.y = self._touch_y
+        data.state = (
+            lv.INDEV_STATE.PRESSED if self._touch_pressed else lv.INDEV_STATE.RELEASED
+        )
 
     # ------------------------------------------------------------------
     # UI Creation
@@ -2253,6 +2344,16 @@ class InfoHubDisplay:
         card_w = options.get("_card_w") or 300
         self._value_tiles.append({"card": card, "card_w": card_w, "rows": {}})
 
+    def _setup_switch_tile_card(self, card, options=None):
+        """Actuator widget: shows every entity in the "aktoren" group, one
+        per row, each with a tappable lv.switch instead of a read-only
+        value - same on-demand row lifecycle as _setup_value_tile_card(),
+        see update_aktoren().
+        """
+        options = options or {}
+        card_w = options.get("_card_w") or 300
+        self._switch_tiles.append({"card": card, "card_w": card_w, "rows": {}})
+
     def _setup_clock_card(self, card, options=None):
         """Set up the standalone digital clock card (7-segment digits + date).
 
@@ -3449,6 +3550,22 @@ class InfoHubDisplay:
                 self.status_label.set_style_text_color(
                     lv.color_hex(THEME["error"]), 0)
 
+    def send_action(self, entity_id, command):
+        """Sends a {"type": "action", ...} message back to the server -
+        used by switch_tile's tap handler. self._sock is set/cleared by
+        websocket_client() around the connection's lifetime; if we're
+        between connections this is just a no-op (the tap has no effect,
+        matching "no optimistic UI" - see the actuator-widget plan)."""
+        if not self._sock:
+            return
+        try:
+            msg = json.dumps(
+                {"type": "action", "entity_id": entity_id, "command": command}
+            ).encode()
+            self._sock.send(_ws_encode_frame(msg))
+        except Exception as e:
+            print("Send action error:", e)
+
     def update_indoor(self, data):
         """Update indoor climate labels and comfort gauge."""
         if not self.indoor_temp_label:
@@ -3538,7 +3655,7 @@ class InfoHubDisplay:
                         del rows[entity_id]
 
                 for i, (entity_id, entity_data) in enumerate(items):
-                    row_y = 15 + i * row_h
+                    row_y = CARD_CONTENT_TOP + i * row_h
                     if entity_id not in rows:
                         label_lbl = lv.label(card)
                         label_lbl.set_style_text_color(
@@ -3561,6 +3678,127 @@ class InfoHubDisplay:
                     row["value"].set_text(_safe_text(value_text))
         except Exception as e:
             print("Custom update error:", e)
+
+    def _create_toggle_switch(self, card, entity_id):
+        """Builds one custom rocker-style toggle: a paddle that sits in
+        the upper half of its track when on, lower half when off - like
+        flipping a real wall switch - instead of LVGL's built-in
+        lv.switch(), which only slides horizontally left/right. That
+        matters here specifically: a horizontal drag-to-toggle gesture
+        would visually and gesture-wise compete with the screen's
+        left/right swipe-to-change-page detection. Operated by a plain
+        tap (lv.EVENT.CLICKED - fires on a completed tap, not on
+        press-then-drag-away), not a directional swipe, so there's no
+        gesture-recognition risk to begin with; the vertical flip is
+        purely the visual metaphor for "a real switch", not a gesture
+        the user has to perform.
+        """
+        # Styled after a classic illuminated power-strip rocker switch
+        # (red=off/green=on, the rocker face filling most of a slim dark
+        # bezel) rather than a soft pill-in-a-track look.
+        track_w, track_h = 44, 60
+        track = lv.obj(card)
+        track.set_size(track_w, track_h)
+        track.set_style_radius(4, 0)
+        track.set_style_bg_color(lv.color_hex(0x111111), 0)
+        track.set_style_bg_opa(255, 0)
+        track.set_style_border_width(2, 0)
+        track.set_style_border_color(lv.color_hex(0x333333), 0)
+        track.set_style_pad_all(0, 0)
+        track.remove_flag(lv.obj.FLAG.SCROLLABLE)
+
+        margin = 4
+        paddle_w = track_w - 2 * margin
+        paddle_h = (track_h - 2 * margin - 2) // 2
+        paddle = lv.obj(track)
+        paddle.set_size(paddle_w, paddle_h)
+        paddle.set_style_radius(2, 0)
+        paddle.set_style_border_width(0, 0)
+        paddle.remove_flag(lv.obj.FLAG.CLICKABLE)
+        paddle.remove_flag(lv.obj.FLAG.SCROLLABLE)
+
+        toggle = {
+            "track": track, "paddle": paddle, "paddle_h": paddle_h,
+            "margin": margin, "state": False,
+        }
+        track.add_event_cb(
+            lambda e, eid=entity_id, t=toggle: self._on_toggle_switch_tapped(eid, t),
+            lv.EVENT.CLICKED, None)
+        return toggle
+
+    def _position_toggle_paddle(self, toggle):
+        """Moves/colors a toggle's paddle to match toggle["state"] -
+        used both for real updates (update_aktoren()) and the optimistic
+        local flip on tap (_on_toggle_switch_tapped()). Green when on,
+        red when off - classic power-strip rocker switch colors."""
+        # align() instead of set_pos() - TOP_MID/BOTTOM_MID center
+        # horizontally via LVGL's own layout math, sidestepping the
+        # padding/content-box ambiguity that made manual x-coordinates
+        # come out asymmetric.
+        m = toggle["margin"]
+        if toggle["state"]:
+            toggle["paddle"].align(lv.ALIGN.TOP_MID, 0, m)
+        else:
+            toggle["paddle"].align(lv.ALIGN.BOTTOM_MID, 0, -m)
+        color = THEME["success"] if toggle["state"] else THEME["error"]
+        toggle["paddle"].set_style_bg_color(lv.color_hex(color), 0)
+        toggle["paddle"].set_style_bg_opa(255, 0)
+
+    def _on_toggle_switch_tapped(self, entity_id, toggle):
+        """A switch_tile row was tapped - flip it optimistically for
+        immediate feedback (the real state arrives moments later via the
+        normal entity_update flow and reconciles this if needed - see
+        update_aktoren()) and tell the server."""
+        toggle["state"] = not toggle["state"]
+        self._position_toggle_paddle(toggle)
+        self.send_action(entity_id, "toggle")
+
+    def update_aktoren(self, data):
+        """Updates every switch_tile widget from the shared "aktoren"
+        group - same on-demand row lifecycle as update_custom(), but each
+        row's "switch" is a custom toggle (see _create_toggle_switch())
+        instead of a read-only label.
+        """
+        try:
+            # Taller than value_tile's rows (34px) and than the old
+            # lv.switch()-based rows - this row's touch target (and the
+            # rocker-switch visual) needs more vertical room.
+            row_h = 70
+            items = sorted(data.items(), key=lambda kv: kv[1].get("label", kv[0]))
+            for tile in self._switch_tiles:
+                card = tile["card"]
+                rows = tile["rows"]
+                card_w = tile["card_w"]
+
+                for entity_id in list(rows.keys()):
+                    if entity_id not in data:
+                        rows[entity_id]["label"].delete()
+                        # Deletes the paddle too (LVGL deletes children
+                        # along with their parent).
+                        rows[entity_id]["switch"]["track"].delete()
+                        del rows[entity_id]
+
+                for i, (entity_id, entity_data) in enumerate(items):
+                    row_y = CARD_CONTENT_TOP + i * row_h
+                    if entity_id not in rows:
+                        label_lbl = lv.label(card)
+                        label_lbl.set_style_text_color(
+                            lv.color_hex(THEME["text_secondary"]), 0)
+                        label_lbl.set_style_text_font(lv.font_montserrat_14, 0)
+                        label_lbl.set_width(max(60, card_w - 130))
+                        toggle = self._create_toggle_switch(card, entity_id)
+                        rows[entity_id] = {"label": label_lbl, "switch": toggle}
+                    row = rows[entity_id]
+                    row["label"].set_pos(15, row_y + 20)
+                    row["switch"]["track"].align(lv.ALIGN.TOP_RIGHT, -20, row_y)
+
+                    label_text = entity_data.get("label", entity_id)
+                    state = str(entity_data.get("state", "")).lower()
+                    row["label"].set_text(_safe_text(str(label_text)))
+                    row["switch"]["state"] = state == "on"
+                    self._position_toggle_paddle(row["switch"])
+        except Exception as e:
+            print("Aktoren update error:", e)
 
     def process_message(self, msg):
         """Process incoming WebSocket message"""
@@ -3607,6 +3845,8 @@ class InfoHubDisplay:
             self.update_indoor(group_data)
         elif group == "custom":
             self.update_custom(group_data)
+        elif group == "aktoren":
+            self.update_aktoren(group_data)
 
     # ------------------------------------------------------------------
     # Layout (server-driven screens/widgets)
@@ -3654,6 +3894,7 @@ class InfoHubDisplay:
             self.calendar_card = None
             self.power_card = None
             self._value_tiles = []
+            self._switch_tiles = []
 
             # "Did this value change since the last icon/color draw?"
             # guards - separate from the widget refs above, but just as
@@ -3747,6 +3988,7 @@ class InfoHubDisplay:
             "indoor_climate": self._setup_raumklima_card,
             "calendar_month": self._setup_calendar_card,
             "value_tile": self._setup_value_tile_card,
+            "switch_tile": self._setup_switch_tile_card,
         }
 
         for widget in screen.get("widgets", []):
@@ -3836,6 +4078,7 @@ async def websocket_client(display):
             if "101" in response:
                 print("WebSocket connected")
                 display.set_connected(True)
+                display._sock = sock
 
                 hello = json.dumps({"type": "hello", "device_id": DEVICE_ID}).encode()
                 sock.send(_ws_encode_frame(hello))
@@ -3921,6 +4164,7 @@ async def websocket_client(display):
             print("Connection error:", e)
             display.set_connected(False)
         finally:
+            display._sock = None
             if sock:
                 try:
                     sock.close()
