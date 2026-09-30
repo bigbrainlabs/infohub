@@ -24,9 +24,9 @@ from .const import DEFAULT_LANGUAGE, GROUP_CUSTOM, PROTOCOL_VERSION
 from .widgets import GRID_COLS, GRID_ROWS, WIDGET_VALUE_TILE, widget_label
 
 # Which full_update data group each widget type reads from. "clock" has
-# none - it renders local time, not HA state. "value_tile" also reads
-# GROUP_CUSTOM, but unlike the others needs a specific entity_id within
-# it too - see layout_from_panel().
+# none - it renders local time, not HA state. "value_tile" reads all of
+# GROUP_CUSTOM (every entity in it, one per row) rather than a fixed set
+# of specific ones like the other types - see the client's update_custom().
 _TYPE_TO_GROUP = {
     "weather_current": "wetter",
     "power_gauge": "strom",
@@ -149,39 +149,12 @@ class Layout:
         }
 
 
-def _widget_label(
-    widget: dict[str, Any], entities_by_id: dict[str, dict[str, Any]], language: str
-) -> str:
-    """A widget's display label.
-
-    A user-set `alias` (a plain field on the widget, like `pos` - not a
-    type-specific "option") always wins if present. Otherwise: the bound
-    entity's own label for value_tile (falling back to the generic type
-    label until an entity is picked), or just the type's catalog label.
-    """
+def _widget_label(widget: dict[str, Any], language: str) -> str:
+    """A widget's display label - a user-set `alias` (a plain field on
+    the widget, like `pos` - not a type-specific "option") always wins
+    if present, otherwise just the type's catalog label."""
     alias = (widget.get("alias") or "").strip()
-    if alias:
-        return alias
-    if widget["type"] == WIDGET_VALUE_TILE:
-        entity_id = widget.get("options", {}).get("entity_id")
-        entity = entities_by_id.get(entity_id) if entity_id else None
-        if entity and entity.get("label"):
-            return entity["label"]
-    return widget_label(widget["type"], language)
-
-
-def _widget_data_source(widget: dict[str, Any]) -> dict[str, Any]:
-    """A widget's data_source - value_tile also needs the specific
-    entity_id its "entity_id" option names, not just the group."""
-    group = _TYPE_TO_GROUP.get(widget["type"])
-    if group is None:
-        return {}
-    if widget["type"] == WIDGET_VALUE_TILE:
-        entity_id = widget.get("options", {}).get("entity_id")
-        if not entity_id:
-            return {}
-        return {"group": group, "entity_id": entity_id}
-    return {"group": group}
+    return alias or widget_label(widget["type"], language)
 
 
 def layout_from_panel(panel: dict[str, Any]) -> Layout:
@@ -190,23 +163,21 @@ def layout_from_panel(panel: dict[str, Any]) -> Layout:
     There is still only ever one real screen ("overview") - a panel's
     `widgets` list *is* that screen's content. Each widget's data_source
     and display label are derived from its type via widgets.widget_label()/
-    _TYPE_TO_GROUP, not stored per-instance, since those are inherent to
-    the type, not something the user configures per widget - except
-    "value_tile" (see _widget_label()/_widget_data_source() below), which
-    picks one specific entity out of the shared GROUP_CUSTOM pool via its
-    own "entity_id" option, so both its label and data_source depend on
-    that choice instead of just its type. The display label is resolved
-    to the panel's own `language` (see Layout).
+    _TYPE_TO_GROUP (or a user-set `alias`, see _widget_label()), not
+    stored per-instance, since those are inherent to the type, not
+    something the user configures per widget. The display label is
+    resolved to the panel's own `language` (see Layout).
     """
     language = panel.get("language") or DEFAULT_LANGUAGE
-    entities_by_id = {e["entity_id"]: e for e in panel.get("entities", [])}
     widgets = tuple(
         Widget(
             id=w["id"],
             type=w["type"],
             pos=WidgetPosition(**w["pos"]),
-            label=_widget_label(w, entities_by_id, language),
-            data_source=_widget_data_source(w),
+            label=_widget_label(w, language),
+            data_source=(
+                {"group": _TYPE_TO_GROUP[w["type"]]} if w["type"] in _TYPE_TO_GROUP else {}
+            ),
             options=w.get("options", {}),
         )
         for w in panel.get("widgets", [])

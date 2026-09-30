@@ -155,14 +155,15 @@ const WIDGET_CATALOG = {
     default_size: [9, 14],
     options: { months_shown: { type: "number", default: 2, min: 1, max: 2 } },
   },
-  // Generic widget: shows one entity picked from the panel's "custom"
-  // group (see WIDGET_GROUPS) via its own "entity_id" option, instead of
-  // reading a whole fixed group like the other types - the widget
-  // gallery can grow to "any entity" without a new hardcoded type.
+  // Generic widget: shows every entity in the panel's "custom" group
+  // (see WIDGET_GROUPS), one per row - no per-instance selection needed,
+  // the entity table below (scoped to this same group) is what controls
+  // which entities show up here. Lets the widget gallery grow to "any
+  // entity" without a new hardcoded type/renderer per kind of info.
   value_tile: {
     label: { de: "Info-Kachel", en: "Info Tile" },
-    default_size: [6, 4],
-    options: { entity_id: { type: "entity", default: "" } },
+    default_size: [7, 6],
+    options: {},
   },
 };
 
@@ -172,7 +173,6 @@ const OPTION_LABELS = {
   show_scene: { de: "Himmelsszene anzeigen", en: "Show sky scene" },
   max_value: { de: "Maximalwert", en: "Max value" },
   months_shown: { de: "Angezeigte Monate", en: "Months shown" },
-  entity_id: { de: "Entity", en: "Entity" },
 };
 
 const GRID_COLS = 24;
@@ -908,15 +908,6 @@ class InfohubPanel extends HTMLElement {
               if (field.type === "select") {
                 return `<label>${_escape(optionLabel)}<select data-opt="${name}" data-opt-type="select">${(field.choices || [])
                   .map((c) => `<option value="${_escapeAttr(c)}" ${c === current ? "selected" : ""}>${_escape(c)}</option>`)
-                  .join("")}</select></label>`;
-              }
-              if (field.type === "entity") {
-                const scoped = (panel.entities || []).filter((e) => e.group === group);
-                return `<label>${_escape(optionLabel)}<select data-opt="${name}" data-opt-type="text"><option value="">${t.selectEntityPlaceholder}</option>${scoped
-                  .map(
-                    (e) =>
-                      `<option value="${_escapeAttr(e.entity_id)}" ${e.entity_id === current ? "selected" : ""}>${_escape(e.label || e.entity_id)}</option>`
-                  )
                   .join("")}</select></label>`;
               }
               return `<label>${_escape(optionLabel)}<input type="number" data-opt="${name}" data-opt-type="number" value="${_escapeAttr(current)}" ${

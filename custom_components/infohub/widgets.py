@@ -87,14 +87,12 @@ WIDGET_CATALOG: dict[str, dict[str, Any]] = {
         },
     },
     WIDGET_VALUE_TILE: {
-        "default_size": (6, 4),
-        "options": {
-            # "entity" is a new option type: a dropdown scoped to the
-            # panel's GROUP_CUSTOM entities (see panel/infohub-panel.js's
-            # option-form renderer) rather than every hass.states entity -
-            # it must already be one the coordinator is tracking.
-            "entity_id": {"type": "entity", "default": ""},
-        },
+        "default_size": (7, 6),
+        # No per-instance entity selection - it just shows every entity
+        # currently in the panel's GROUP_CUSTOM list, one per row (see
+        # layout.py's data_source and the client's update_custom()).
+        # Picking a subset is what the entity table itself is for.
+        "options": {},
     },
 }
 

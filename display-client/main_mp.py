@@ -918,11 +918,11 @@ class InfoHubDisplay:
         self.waste_preview_cols = []
         self._preview_waste_types = [None, None, None]
 
-        # Value-tile refs - unlike the other widget types (one card ref
-        # each), any number of value_tile widgets can exist at once, each
-        # bound to a different entity_id from the shared "custom" group -
-        # so this is a list, populated in _setup_value_tile_card() and
-        # walked by update_custom() to update just the right one(s).
+        # Value-tile refs - one entry per value_tile widget instance
+        # ({"card", "card_w", "rows": {entity_id: {"label", "value"}}}).
+        # Unlike the other widget types, the row count isn't fixed at
+        # setup time (it's every entity currently in the "custom" group),
+        # so rows are created/deleted on demand in update_custom().
         self._value_tiles = []
 
         # Clock card refs (standalone widget, see _setup_clock_card)
@@ -2241,28 +2241,16 @@ class InfoHubDisplay:
     # ------------------------------------------------------------------
 
     def _setup_value_tile_card(self, card, options=None):
-        """Generic widget: shows one entity's state, chosen server-side via
-        the widget's own "entity_id" option (widgets.py's WIDGET_VALUE_TILE).
-
-        v1: a single display style (big centered value + unit). The
-        card's title is already set by _create_card() from the wire
-        "label" - the server resolves that to the bound entity's own
-        configured label (see layout.py's _widget_label()), so nothing
-        extra is needed here for it.
+        """Generic widget: shows every entity in the "custom" group, one
+        per row (label left, value right) - no per-instance entity
+        selection, the entity table itself controls what shows up here
+        (widgets.py's WIDGET_VALUE_TILE). Rows are created/removed
+        on demand in update_custom() as entities come and go, since the
+        entity count isn't known yet at layout-build time.
         """
         options = options or {}
-        entity_id = options.get("entity_id") or ""
         card_w = options.get("_card_w") or 300
-
-        value_label = lv.label(card)
-        value_label.set_text("?" if not entity_id else "--")
-        value_label.set_style_text_color(lv.color_hex(THEME["text"]), 0)
-        value_label.set_style_text_font(lv.font_montserrat_24, 0)
-        value_label.set_width(max(40, card_w - 30))
-        value_label.set_style_text_align(lv.TEXT_ALIGN.CENTER, 0)
-        value_label.align(lv.ALIGN.CENTER, 0, 10)
-
-        self._value_tiles.append({"entity_id": entity_id, "label": value_label})
+        self._value_tiles.append({"card": card, "card_w": card_w, "rows": {}})
 
     def _setup_clock_card(self, card, options=None):
         """Set up the standalone digital clock card (7-segment digits + date).
@@ -3526,18 +3514,52 @@ class InfoHubDisplay:
     def update_custom(self, data):
         """Updates every value_tile widget from the shared "custom" group.
 
-        `data` is keyed by entity_id (like every other group) - each
-        value_tile in self._value_tiles picks out just the one entity_id
-        its own "entity_id" option named (see _setup_value_tile_card).
+        `data` is keyed by entity_id (like every other group). Unlike
+        the other update_* methods, the set of rows isn't fixed at setup
+        time - entities can be added/removed from the "custom" group at
+        any time without a layout rebuild, so rows are created/deleted
+        here on demand, one per entity_id, sorted by label for a stable
+        order. Existing rows are reused (just re-positioned/re-texted)
+        so a plain value change doesn't recreate anything.
         """
-        for tile in self._value_tiles:
-            entity_data = data.get(tile["entity_id"])
-            if not entity_data:
-                continue
-            state = str(entity_data.get("state", "--"))
-            unit = entity_data.get("unit", "")
-            text = state + (" " + unit if unit else "")
-            tile["label"].set_text(_safe_text(text))
+        try:
+            row_h = 34
+            items = sorted(data.items(), key=lambda kv: kv[1].get("label", kv[0]))
+            for tile in self._value_tiles:
+                card = tile["card"]
+                rows = tile["rows"]
+                card_w = tile["card_w"]
+
+                for entity_id in list(rows.keys()):
+                    if entity_id not in data:
+                        rows[entity_id]["label"].delete()
+                        rows[entity_id]["value"].delete()
+                        del rows[entity_id]
+
+                for i, (entity_id, entity_data) in enumerate(items):
+                    row_y = 15 + i * row_h
+                    if entity_id not in rows:
+                        label_lbl = lv.label(card)
+                        label_lbl.set_style_text_color(
+                            lv.color_hex(THEME["text_secondary"]), 0)
+                        label_lbl.set_style_text_font(lv.font_montserrat_14, 0)
+                        label_lbl.set_width(max(60, card_w - 110))
+                        value_lbl = lv.label(card)
+                        value_lbl.set_style_text_color(lv.color_hex(THEME["text"]), 0)
+                        value_lbl.set_style_text_font(lv.font_montserrat_16, 0)
+                        rows[entity_id] = {"label": label_lbl, "value": value_lbl}
+                    row = rows[entity_id]
+                    row["label"].set_pos(15, row_y)
+                    row["value"].align(lv.ALIGN.TOP_RIGHT, -15, row_y)
+
+                    label_text = entity_data.get("label", entity_id)
+                    state = str(entity_data.get("state", "--"))
+                    unit = entity_data.get("unit", "")
+                    value_text = state + (" " + unit if unit else "")
+                    row["label"].set_text(_safe_text(str(label_text)))
+                    row["value"].set_text(_safe_text(value_text))
+        except Exception as e:
+            print("Custom update error:", e)
 
     def process_message(self, msg):
         """Process incoming WebSocket message"""
