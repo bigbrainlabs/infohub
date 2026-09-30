@@ -9,12 +9,12 @@ CONF_WS_PORT = "ws_port"
 CONF_ENTITIES = "entities"
 
 # GTS (Gruenlandtemperatursumme) - externe API (exotengaertner.de), kein
-# hass.states. PLZ/Land werden ueber den Options-Flow konfiguriert; Default
-# ist die PLZ aus der bisherigen config.yaml des Standalone-Service.
+# hass.states. PLZ/Land werden ueber den Options-Flow konfiguriert; leere
+# PLZ (Default) deaktiviert die Abfrage komplett, siehe coordinator.py.
 CONF_GTS_PLZ = "gts_plz"
 CONF_GTS_COUNTRY = "gts_country"
 CONF_GTS_POLL_INTERVAL = "gts_poll_interval"
-DEFAULT_GTS_PLZ = "06774"
+DEFAULT_GTS_PLZ = ""
 DEFAULT_GTS_COUNTRY = "DE"
 DEFAULT_GTS_POLL_INTERVAL = 3600
 GTS_API_URL = "https://exotengaertner.de/wp-json/konfigurator/v1/gts"

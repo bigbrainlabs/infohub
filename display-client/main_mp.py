@@ -10,8 +10,9 @@ import asyncio
 import socket
 import random
 
-# Configuration
-INFOHUB_HOST = "192.168.2.49"
+# Configuration - set INFOHUB_HOST to your Home Assistant host's IP
+# (or hostname, if your network resolves it) before deploying.
+INFOHUB_HOST = "192.168.1.100"
 INFOHUB_PORT = 8765
 DISPLAY_WIDTH = 1920
 DISPLAY_HEIGHT = 1200

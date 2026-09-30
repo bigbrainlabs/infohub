@@ -32,30 +32,30 @@ DEFAULT_ENTITY_GROUPS: dict[str, tuple[EntityConfig, ...]] = {
     ),
     GROUP_STROM: (
         EntityConfig(
-            "sensor.tibber_pulse_dubener_strasse_54_leistung",
+            "sensor.tibber_pulse_home_leistung",
             "Aktueller Verbrauch",
             unit="W",
         ),
         EntityConfig(
-            "sensor.tibber_pulse_dubener_strasse_54_kumulierter_verbrauch",
+            "sensor.tibber_pulse_home_kumulierter_verbrauch",
             "Verbrauch heute",
             unit="kWh",
         ),
         EntityConfig(
-            "sensor.dubener_strasse_54_strompreis", "Strompreis", unit="ct/kWh"
+            "sensor.home_strompreis", "Strompreis", unit="ct/kWh"
         ),
         EntityConfig(
-            "sensor.dubener_strasse_54_monatliche_kosten",
+            "sensor.home_monatliche_kosten",
             "Monatliche Kosten",
             unit="€",
         ),
     ),
     GROUP_RAUMKLIMA: (
         EntityConfig(
-            "sensor.thermo_3b8790_thermo_temperature", "Innentemperatur", unit="°C"
+            "sensor.thermo_wohnzimmer_temperature", "Innentemperatur", unit="°C"
         ),
         EntityConfig(
-            "sensor.thermo_3b8790_thermo_humidity", "Innenfeuchtigkeit", unit="%"
+            "sensor.thermo_wohnzimmer_humidity", "Innenfeuchtigkeit", unit="%"
         ),
     ),
     GROUP_ABFALL: (

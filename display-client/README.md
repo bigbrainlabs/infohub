@@ -74,7 +74,7 @@ There is no config file - the handful of settings a deployment needs
 are constants at the top of `main_mp.py`:
 
 ```python
-INFOHUB_HOST = "192.168.2.49"   # Home Assistant host
+INFOHUB_HOST = "192.168.1.100"  # your Home Assistant host's IP
 INFOHUB_PORT = 8765             # matches the integration's ws_port
 DISPLAY_WIDTH = 1920
 DISPLAY_HEIGHT = 1200
