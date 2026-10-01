@@ -22,7 +22,18 @@ class EntityConfig:
     entity_id: str
     label: str
     unit: str | None = None
-    type: str | None = None  # e.g. "weather" for extended attributes/forecast
+    # Meaning depends on the entity's group: "weather" (GROUP_WETTER) marks
+    # the one entity that gets extended attributes/forecast; for
+    # GROUP_AKTOREN this instead picks the actuator widget's per-row
+    # control - "cover" (Auf/Stop/Zu) or "slider" (drag to set a value,
+    # see min_value/max_value), None/anything else means the default
+    # on/off toggle. See coordinator.py's _async_transform_state().
+    type: str | None = None
+    # Slider range override - only meaningful when type == "slider". When
+    # unset, coordinator.py falls back to the entity's own min/max state
+    # attribute (number/input_number) or a 0-100 default (light/cover).
+    min_value: float | None = None
+    max_value: float | None = None
 
 
 DEFAULT_ENTITY_GROUPS: dict[str, tuple[EntityConfig, ...]] = {
@@ -100,6 +111,8 @@ def entity_groups_as_list(
             "group": group_name,
             "unit": ec.unit,
             "type": ec.type,
+            "min_value": ec.min_value,
+            "max_value": ec.max_value,
         }
         for group_name, group_entities in groups.items()
         for ec in group_entities
@@ -126,6 +139,8 @@ def build_entity_groups(
                 label=item["label"],
                 unit=item.get("unit") or None,
                 type=item.get("type") or None,
+                min_value=item.get("min_value"),
+                max_value=item.get("max_value"),
             )
         )
     return {group_name: tuple(cfgs) for group_name, cfgs in groups.items()}

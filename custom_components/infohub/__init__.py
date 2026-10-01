@@ -88,7 +88,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # damit spaeter angelegte/geaenderte Zuordnungen sofort gelten.
         return resolve_panel_id(panel_collection.async_items(), device_id)
 
-    async def _resolve_action(entity_id: str, command: str) -> None:
+    async def _resolve_action(entity_id: str, command: str, value: float | None = None) -> None:
         # Allowlist: nur Entities, die jemand explizit zur "aktoren"-
         # Gruppe eines Panels hinzugefuegt hat, sind ueberhaupt schaltbar -
         # der WS-Server selbst hat keine Auth, das begrenzt zumindest den
@@ -101,17 +101,72 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if entity_id not in allowed_ids:
             logger.warning("Action fuer nicht freigegebene Entity ignoriert: %s", entity_id)
             return
-        if command != "toggle":
-            logger.warning("Unbekanntes Action-Kommando ignoriert: %s", command)
+
+        # Service dispatch is by the entity's actual HA domain, not by the
+        # widget's stored "control" type - the allowlist above is the only
+        # gate; which commands make sense for an entity follows from its
+        # domain the same way the rest of HA works.
+        domain = entity_id.split(".", 1)[0]
+
+        if command == "toggle":
+            await hass.services.async_call(
+                "homeassistant", "toggle", {"entity_id": entity_id}, blocking=False
+            )
             return
-        await hass.services.async_call(
-            "homeassistant", "toggle", {"entity_id": entity_id}, blocking=False
-        )
+
+        if command in ("open_cover", "close_cover", "stop_cover"):
+            if domain != "cover":
+                logger.warning("Cover-Kommando fuer Nicht-Cover-Entity ignoriert: %s", entity_id)
+                return
+            await hass.services.async_call(
+                "cover", command, {"entity_id": entity_id}, blocking=False
+            )
+            return
+
+        if command == "set_value":
+            if value is None:
+                logger.warning("set_value ohne Wert ignoriert: %s", entity_id)
+                return
+            if domain in ("number", "input_number"):
+                await hass.services.async_call(
+                    domain, "set_value", {"entity_id": entity_id, "value": value}, blocking=False
+                )
+            elif domain == "light":
+                if value <= 0:
+                    await hass.services.async_call(
+                        "light", "turn_off", {"entity_id": entity_id}, blocking=False
+                    )
+                else:
+                    await hass.services.async_call(
+                        "light",
+                        "turn_on",
+                        {"entity_id": entity_id, "brightness_pct": value},
+                        blocking=False,
+                    )
+            elif domain == "cover":
+                await hass.services.async_call(
+                    "cover",
+                    "set_cover_position",
+                    {"entity_id": entity_id, "position": value},
+                    blocking=False,
+                )
+            else:
+                logger.warning("set_value fuer unbekannte Domain ignoriert: %s", entity_id)
+            return
+
+        logger.warning("Unbekanntes Action-Kommando ignoriert: %s", command)
 
     server = InfoHubWebSocketServer(host="0.0.0.0", port=port)
     server.configure_panels(_build_layouts(panels), default_panel_id, _resolve_panel)
     server.configure_action_handler(_resolve_action)
     await server.start()
+
+    # A lone leftover string from before multi-calendar select existed is
+    # read as a one-item list - see config_flow.py's same fallback.
+    raw_calendar = entry.options.get(CONF_CALENDAR_ENTITY_ID)
+    calendar_entity_ids = (
+        raw_calendar if isinstance(raw_calendar, list) else ([raw_calendar] if raw_calendar else [])
+    )
 
     coordinator = InfoHubCoordinator(
         hass,
@@ -120,7 +175,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         gts_plz=entry.options.get(CONF_GTS_PLZ, DEFAULT_GTS_PLZ),
         gts_country=entry.options.get(CONF_GTS_COUNTRY, DEFAULT_GTS_COUNTRY),
         gts_poll_interval=entry.options.get(CONF_GTS_POLL_INTERVAL, DEFAULT_GTS_POLL_INTERVAL),
-        calendar_entity_id=entry.options.get(CONF_CALENDAR_ENTITY_ID) or None,
+        calendar_entity_ids=calendar_entity_ids,
         calendar_poll_interval=entry.options.get(
             CONF_CALENDAR_POLL_INTERVAL, DEFAULT_CALENDAR_POLL_INTERVAL
         ),
@@ -163,9 +218,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # cache_headers=False, solange das Panel aktiv weiterentwickelt wird -
     # mit True setzt HA hier Cache-Control: max-age=31 Tage, dann sieht
     # der Browser Aenderungen erst nach explizitem Cache-Leeren.
-    await hass.http.async_register_static_paths(
-        [StaticPathConfig(PANEL_JS_URL, str(PANEL_JS_FILE), False)]
-    )
+    #
+    # Registered at most once per HA process lifetime, guarded via
+    # hass.data (survives entry reloads, unlike hass.data[DOMAIN], which
+    # async_unload_entry empties per-entry) - the underlying aiohttp
+    # route table lives on hass.http itself, outside any config entry's
+    # lifecycle, and raises if the same route is added twice. Every
+    # options change reloads this entry (_async_options_updated below),
+    # so without this guard the second setup_entry of any HA session
+    # always failed here - and since that happened *after* the
+    # WebSocket server had already (re-)bound its port, the failed
+    # attempt's server was never cleaned up and orphaned the port for
+    # every subsequent attempt too.
+    if not hass.data.get(f"{DOMAIN}_static_path_registered"):
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(PANEL_JS_URL, str(PANEL_JS_FILE), False)]
+        )
+        hass.data[f"{DOMAIN}_static_path_registered"] = True
     await panel_custom.async_register_panel(
         hass,
         frontend_url_path=PANEL_URL_PATH,

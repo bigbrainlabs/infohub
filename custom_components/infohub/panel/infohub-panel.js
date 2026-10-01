@@ -52,11 +52,24 @@ const STRINGS = {
     colLabel: "Label",
     colUnit: "Einheit",
     colWeather: "Wetter",
+    colControl: "Steuerung",
+    colMin: "Min",
+    colMax: "Max",
+    controlToggle: "Schalter",
+    controlCover: "Rollladen (Auf/Stop/Zu)",
+    controlSlider: "Slider",
     selectEntityPlaceholder: "— Entity wählen —",
     placeholderLabel: "Label",
     placeholderUnit: "Einheit",
+    placeholderMin: "Min",
+    placeholderMax: "Max",
     weatherCheckbox: "Wetter",
-    addEntity: "+ Hinzufügen",
+    addEntity: "+ Entity hinzufügen",
+    done: "Fertig",
+    cancel: "Abbrechen",
+    noEntitiesYet: "Noch keine Entities hinzugefügt.",
+    editEntityTitle: "Bearbeiten",
+    removeEntityTitle: "Entfernen",
     clickWidgetHint: "Widget anklicken, um Optionen zu bearbeiten.",
     noOptions: (label) => `${label} hat keine Optionen.`,
     optionsFor: (label) => `Optionen: ${label}`,
@@ -87,11 +100,24 @@ const STRINGS = {
     colLabel: "Label",
     colUnit: "Unit",
     colWeather: "Weather",
+    colControl: "Control",
+    colMin: "Min",
+    colMax: "Max",
+    controlToggle: "Switch",
+    controlCover: "Cover (Open/Stop/Close)",
+    controlSlider: "Slider",
     selectEntityPlaceholder: "— Select entity —",
     placeholderLabel: "Label",
     placeholderUnit: "Unit",
+    placeholderMin: "Min",
+    placeholderMax: "Max",
     weatherCheckbox: "Weather",
-    addEntity: "+ Add",
+    addEntity: "+ Add entity",
+    done: "Done",
+    cancel: "Cancel",
+    noEntitiesYet: "No entities added yet.",
+    editEntityTitle: "Edit",
+    removeEntityTitle: "Remove",
     clickWidgetHint: "Click a widget to edit its options.",
     noOptions: (label) => `${label} has no options.`,
     optionsFor: (label) => `Options: ${label}`,
@@ -177,6 +203,15 @@ const WIDGET_CATALOG = {
   },
 };
 
+// Per-row actuator control choices for the "aktoren" group's entity
+// table - mirrors EntityConfig.type's meaning for that group (see
+// entities.py). "" (stored as null/None) is the default on/off toggle.
+const AKTOR_CONTROL_CHOICES = [
+  { value: "", labelKey: "controlToggle" },
+  { value: "cover", labelKey: "controlCover" },
+  { value: "slider", labelKey: "controlSlider" },
+];
+
 const OPTION_LABELS = {
   format: { de: "Format", en: "Format" },
   show_seconds: { de: "Sekunden anzeigen", en: "Show seconds" },
@@ -197,6 +232,11 @@ class InfohubPanel extends HTMLElement {
     this._selectedWidgetId = null;
     this._unsubPromise = null;
     this._subscribed = false;
+    // UI-only state for the entity list's expand-to-edit rows (see
+    // _renderEntityList()) - never persisted, reset whenever the
+    // selected widget changes so a stale index can't leak across widgets.
+    this._entityEditIndex = null;
+    this._addingEntity = false;
   }
 
   set hass(hass) {
@@ -496,15 +536,100 @@ class InfohubPanel extends HTMLElement {
         }
         .add-panel-btn { margin-top: 8px; width: 100%; }
         h3 { font-size: 15px; font-weight: 500; margin: 20px 0 8px; }
-        .entity-row, .entity-add-row {
-          display: grid;
-          grid-template-columns: 2fr 1fr 1fr auto auto;
-          gap: 6px;
-          align-items: center;
-          margin-top: 8px;
+        /* Entity list: a compact, collapsed card per entity that expands
+           inline into an edit form on tap - see _entityItemHtml() /
+           _entityAddFormHtml(). Chosen over the old fixed-column table
+           once "aktoren" needed three extra columns (control/min/max) and
+           rows got too wide for the sidebar panel; the edit form's own
+           grid reflows itself (auto-fit) instead of needing a different
+           fixed column count per data group. */
+        .entity-list { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+        .entity-item {
+          border: 1px solid var(--divider-color);
+          border-radius: 10px;
+          background: var(--card-background-color, #fff);
+          overflow: hidden;
         }
-        .entity-row { font-size: 14px; border-bottom: 1px solid var(--divider-color); padding-bottom: 6px; }
-        .entity-row-header { font-size: 12px; margin-top: 16px; }
+        .entity-item-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 10px 12px;
+          cursor: pointer;
+        }
+        .entity-item-row:hover { background: var(--secondary-background-color, rgba(0, 0, 0, 0.04)); }
+        .entity-item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+        .entity-item-label {
+          font-size: 14px; font-weight: 500;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .entity-item-id {
+          font-size: 11px; color: var(--secondary-text-color); font-family: monospace;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .entity-item-pill {
+          flex-shrink: 0;
+          font-size: 10px; padding: 3px 8px; border-radius: 10px;
+          background: var(--secondary-background-color, #eee);
+          color: var(--secondary-text-color);
+          white-space: nowrap;
+        }
+        .entity-item-pill.pill-cover { background: rgba(245, 158, 11, 0.18); color: #f59e0b; }
+        .entity-item-pill.pill-slider { background: rgba(var(--rgb-primary-color, 3, 169, 244), 0.18); color: var(--primary-color); }
+        .entity-item-pill.pill-weather { background: rgba(var(--rgb-primary-color, 3, 169, 244), 0.18); color: var(--primary-color); }
+        .entity-item-chevron {
+          flex-shrink: 0;
+          color: var(--secondary-text-color);
+          transition: transform 0.15s ease;
+        }
+        .entity-item.expanded .entity-item-chevron { transform: rotate(90deg); }
+        .entity-item.expanded .entity-item-row { border-bottom: 1px solid var(--divider-color); }
+        .entity-item-edit {
+          padding: 12px;
+          background: var(--secondary-background-color, rgba(0, 0, 0, 0.02));
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+          gap: 10px;
+        }
+        .entity-item-edit label {
+          display: flex; flex-direction: column; gap: 4px;
+          font-size: 11px; color: var(--secondary-text-color);
+        }
+        .entity-item-edit label.full { grid-column: 1 / -1; }
+        .entity-item-edit label.checkbox-label { flex-direction: row; align-items: center; gap: 6px; }
+        .entity-item-edit-actions {
+          grid-column: 1 / -1;
+          display: flex; justify-content: flex-end; gap: 8px;
+          margin-top: 2px;
+        }
+        .entity-item-edit-actions button, .entity-add-trigger {
+          padding: 7px 14px;
+          border-radius: 8px;
+          border: 1px solid var(--divider-color);
+          background: var(--card-background-color, #fff);
+          color: var(--primary-text-color);
+          cursor: pointer;
+          font-size: 13px;
+        }
+        .entity-done-btn, .entity-add-confirm {
+          background: var(--primary-color);
+          border-color: var(--primary-color);
+          color: var(--text-primary-color, #fff);
+        }
+        .entity-add-trigger {
+          width: 100%;
+          margin-top: 8px;
+          border-style: dashed;
+          color: var(--primary-color);
+        }
+        .entity-empty {
+          padding: 16px;
+          text-align: center;
+          color: var(--secondary-text-color);
+          font-size: 13px;
+          border: 1px dashed var(--divider-color);
+          border-radius: 10px;
+        }
         input[type="text"], input[type="number"], select {
           padding: 6px;
           border: 1px solid var(--divider-color);
@@ -632,6 +757,8 @@ class InfohubPanel extends HTMLElement {
         if (ev.target.closest("[data-delete]")) return;
         this._selectedId = row.dataset.id;
         this._selectedWidgetId = null;
+        this._entityEditIndex = null;
+        this._addingEntity = false;
         this._render();
       });
     });
@@ -796,6 +923,8 @@ class InfohubPanel extends HTMLElement {
         // `panel`-Stand die gerade bestaetigte Drag-Position wieder
         // ueberschreiben.
         this._selectedWidgetId = widget.id;
+        this._entityEditIndex = null;
+        this._addingEntity = false;
         canvas.querySelectorAll(".widget-box").forEach((box) => box.classList.remove("selected"));
         el.classList.add("selected");
         const current = this._panels[panel.id] || panel;
@@ -943,36 +1072,22 @@ class InfohubPanel extends HTMLElement {
     } else if (group === "kalender") {
       entitiesHtml = `<div class="hint" style="margin-top:16px;">${t.calendarEntityHint}</div>`;
     } else {
-      const showWeatherCol = group === "wetter";
       const indexed = (panel.entities || [])
         .map((e, i) => ({ e, i }))
         .filter(({ e }) => e.group === group);
       entitiesHtml = `
         <div class="hint" style="margin-top:16px;">${_escape(t.entitiesFor(widgetLabel))}</div>
-        <div class="entity-row entity-row-header hint">
-          <span>${t.colEntity}</span><span>${t.colLabel}</span><span>${t.colUnit}</span>${showWeatherCol ? `<span>${t.colWeather}</span>` : "<span></span>"}<span></span>
-        </div>
         <div class="entity-list">
-          ${indexed
-            .map(
-              ({ e, i }) => `
-            <div class="entity-row">
-              <select class="inline-entity-picker" data-index="${i}">${this._entitySelectOptions(e.entity_id)}</select>
-              <span>${_escape(e.label || "")}</span>
-              <span>${_escape(e.unit || "")}</span>
-              ${showWeatherCol ? `<span>${e.type === "weather" ? "✓" : ""}</span>` : "<span></span>"}
-              <button class="icon-button" data-remove-entity="${i}">✕</button>
-            </div>`
-            )
-            .join("")}
+          ${
+            indexed.length
+              ? indexed.map(({ e, i }) => this._entityItemHtml(t, group, e, i)).join("")
+              : this._addingEntity
+                ? ""
+                : `<div class="entity-empty">${t.noEntitiesYet}</div>`
+          }
+          ${this._addingEntity ? this._entityAddFormHtml(t, group) : ""}
         </div>
-        <div class="entity-add-row">
-          <select id="widget-entity-picker"><option value="">${t.selectEntityPlaceholder}</option>${this._entitySelectOptions(null)}</select>
-          <input type="text" id="widget-entity-label" placeholder="${t.placeholderLabel}" />
-          <input type="text" id="widget-entity-unit" placeholder="${t.placeholderUnit}" />
-          ${showWeatherCol ? `<label class="hint"><input type="checkbox" id="widget-entity-weather" /> ${t.weatherCheckbox}</label>` : "<span></span>"}
-          <button id="widget-entity-add">${t.addEntity}</button>
-        </div>
+        ${this._addingEntity ? "" : `<button class="entity-add-trigger" id="entity-add-trigger">${t.addEntity}</button>`}
       `;
     }
 
@@ -994,35 +1109,211 @@ class InfohubPanel extends HTMLElement {
     });
 
     if (group && group !== "kalender") {
-      box.querySelectorAll("[data-remove-entity]").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          this._removeEntity(panel.id, parseInt(btn.dataset.removeEntity, 10));
-        });
+      this._wireEntityList(box, panel, widget, group);
+    }
+  }
+
+  // -- Entity list (expand-to-edit cards) ------------------------------------
+  //
+  // Each tracked entity renders as a compact one-line card; tapping it
+  // expands an inline edit form below it (entity/label/unit plus
+  // group-specific fields - weather checkbox, or aktoren's control
+  // type + min/max). Only one card (or the "add entity" form) is ever
+  // expanded at a time - purely local UI state (this._entityEditIndex /
+  // this._addingEntity, reset whenever the selected widget changes), not
+  // persisted. Replaces the old always-expanded, fixed-column table,
+  // which had grown too wide once aktoren needed three extra columns.
+
+  _entityPillHtml(t, group, e) {
+    if (group === "aktoren") {
+      const choice = AKTOR_CONTROL_CHOICES.find((c) => c.value === (e.type || "")) || AKTOR_CONTROL_CHOICES[0];
+      const cls = e.type === "cover" ? " pill-cover" : e.type === "slider" ? " pill-slider" : "";
+      return `<span class="entity-item-pill${cls}">${_escape(t[choice.labelKey])}</span>`;
+    }
+    if (group === "wetter" && e.type === "weather") {
+      return `<span class="entity-item-pill pill-weather">★ ${_escape(t.colWeather)}</span>`;
+    }
+    if (e.unit) {
+      return `<span class="entity-item-pill">${_escape(e.unit)}</span>`;
+    }
+    return "";
+  }
+
+  _entityFieldsHtml(t, group, e, index) {
+    const isSlider = (e.type || "") === "slider";
+    const entityOptions = this._entitySelectOptions(e.entity_id || null);
+    let fields = `
+      <label class="full">${t.colEntity}
+        <select class="entity-field" data-field="entity_id" data-index="${index}">
+          ${index === "new" ? `<option value="">${t.selectEntityPlaceholder}</option>` : ""}${entityOptions}
+        </select>
+      </label>
+      <label>${t.colLabel}
+        <input type="text" class="entity-field" data-field="label" data-index="${index}" value="${_escapeAttr(e.label || "")}" placeholder="${t.placeholderLabel}" />
+      </label>
+      <label>${t.colUnit}
+        <input type="text" class="entity-field" data-field="unit" data-index="${index}" value="${_escapeAttr(e.unit || "")}" placeholder="${t.placeholderUnit}" />
+      </label>
+    `;
+    if (group === "wetter") {
+      fields += `
+        <label class="full checkbox-label">
+          <input type="checkbox" class="entity-field" data-field="weather" data-index="${index}" ${e.type === "weather" ? "checked" : ""} />
+          ${t.weatherCheckbox}
+        </label>
+      `;
+    } else if (group === "aktoren") {
+      fields += `
+        <label>${t.colControl}
+          <select class="entity-field entity-control-select" data-field="control" data-index="${index}">
+            ${AKTOR_CONTROL_CHOICES.map((c) => `<option value="${c.value}" ${c.value === (e.type || "") ? "selected" : ""}>${_escape(t[c.labelKey])}</option>`).join("")}
+          </select>
+        </label>
+        <label>${t.colMin}
+          <input type="number" class="entity-field entity-min-input" data-field="min" data-index="${index}" value="${e.min_value ?? ""}" ${isSlider ? "" : "disabled"} />
+        </label>
+        <label>${t.colMax}
+          <input type="number" class="entity-field entity-max-input" data-field="max" data-index="${index}" value="${e.max_value ?? ""}" ${isSlider ? "" : "disabled"} />
+        </label>
+      `;
+    }
+    return fields;
+  }
+
+  _entityItemHtml(t, group, e, i) {
+    const expanded = this._entityEditIndex === i;
+    return `
+      <div class="entity-item${expanded ? " expanded" : ""}">
+        <div class="entity-item-row" data-toggle-edit="${i}">
+          <div class="entity-item-main">
+            <span class="entity-item-label">${_escape(e.label || e.entity_id)}</span>
+            <span class="entity-item-id">${_escape(e.entity_id)}</span>
+          </div>
+          ${this._entityPillHtml(t, group, e)}
+          <span class="entity-item-chevron">›</span>
+          <button class="icon-button" data-remove-entity="${i}" title="${t.removeEntityTitle}">✕</button>
+        </div>
+        ${
+          expanded
+            ? `<div class="entity-item-edit">
+                 ${this._entityFieldsHtml(t, group, e, i)}
+                 <div class="entity-item-edit-actions">
+                   <button class="entity-done-btn" data-index="${i}">${t.done}</button>
+                 </div>
+               </div>`
+            : ""
+        }
+      </div>
+    `;
+  }
+
+  _entityAddFormHtml(t, group) {
+    return `
+      <div class="entity-item expanded entity-item-add">
+        <div class="entity-item-edit">
+          ${this._entityFieldsHtml(t, group, {}, "new")}
+          <div class="entity-item-edit-actions">
+            <button class="entity-add-cancel">${t.cancel}</button>
+            <button class="entity-add-confirm">${t.addEntity}</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  _wireEntityList(box, panel, widget, group) {
+    box.querySelectorAll("[data-toggle-edit]").forEach((row) => {
+      row.addEventListener("click", (ev) => {
+        if (ev.target.closest("[data-remove-entity]")) return;
+        const index = parseInt(row.dataset.toggleEdit, 10);
+        this._entityEditIndex = this._entityEditIndex === index ? null : index;
+        this._addingEntity = false;
+        this._renderWidgetOptions(panel, widget);
       });
-      box.querySelectorAll(".inline-entity-picker").forEach((inlinePicker) => {
-        const index = parseInt(inlinePicker.dataset.index, 10);
-        const current = (panel.entities || [])[index];
-        inlinePicker.addEventListener("change", () => {
-          const newEntityId = inlinePicker.value;
-          if (!newEntityId || (current && newEntityId === current.entity_id)) return;
-          this._updateEntity(panel.id, index, { entity_id: newEntityId });
-        });
+    });
+    box.querySelectorAll(".entity-done-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        this._entityEditIndex = null;
+        this._renderWidgetOptions(panel, widget);
       });
-      const picker = box.querySelector("#widget-entity-picker");
-      box.querySelector("#widget-entity-add").addEventListener("click", () => {
-        const entityId = picker.value;
+    });
+    box.querySelectorAll("[data-remove-entity]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        this._entityEditIndex = null;
+        this._removeEntity(panel.id, parseInt(btn.dataset.removeEntity, 10));
+      });
+    });
+
+    box.querySelectorAll(".entity-field[data-index]").forEach((field) => {
+      const index = field.dataset.index;
+      if (index === "new") return; // handled by the add-form's confirm button instead
+      const i = parseInt(index, 10);
+      field.addEventListener("change", () => {
+        const fieldName = field.dataset.field;
+        if (fieldName === "entity_id") {
+          const current = (panel.entities || [])[i];
+          if (!field.value || (current && field.value === current.entity_id)) return;
+          this._updateEntity(panel.id, i, { entity_id: field.value });
+        } else if (fieldName === "label") {
+          this._updateEntity(panel.id, i, { label: field.value });
+        } else if (fieldName === "unit") {
+          this._updateEntity(panel.id, i, { unit: field.value || null });
+        } else if (fieldName === "weather") {
+          this._updateEntity(panel.id, i, { type: field.checked ? "weather" : null });
+        } else if (fieldName === "control") {
+          this._updateEntity(panel.id, i, { type: field.value || null });
+        } else if (fieldName === "min") {
+          this._updateEntity(panel.id, i, { min_value: field.value === "" ? null : Number(field.value) });
+        } else if (fieldName === "max") {
+          this._updateEntity(panel.id, i, { max_value: field.value === "" ? null : Number(field.value) });
+        }
+      });
+    });
+
+    const addTrigger = box.querySelector("#entity-add-trigger");
+    if (addTrigger) {
+      addTrigger.addEventListener("click", () => {
+        this._addingEntity = true;
+        this._entityEditIndex = null;
+        this._renderWidgetOptions(panel, widget);
+      });
+    }
+    const addCancel = box.querySelector(".entity-add-cancel");
+    if (addCancel) {
+      addCancel.addEventListener("click", () => {
+        this._addingEntity = false;
+        this._renderWidgetOptions(panel, widget);
+      });
+    }
+    const addControlSelect = box.querySelector('.entity-field[data-index="new"].entity-control-select');
+    if (addControlSelect) {
+      // Live-toggle, unlike existing rows: there's no saved entity yet to
+      // trigger a re-render off of, so the min/max disabled state has to
+      // be flipped directly here instead.
+      addControlSelect.addEventListener("change", () => {
+        const isSlider = addControlSelect.value === "slider";
+        box.querySelector('.entity-min-input[data-index="new"]').disabled = !isSlider;
+        box.querySelector('.entity-max-input[data-index="new"]').disabled = !isSlider;
+      });
+    }
+    const addConfirm = box.querySelector(".entity-add-confirm");
+    if (addConfirm) {
+      addConfirm.addEventListener("click", () => {
+        const field = (name) => box.querySelector(`.entity-field[data-index="new"][data-field="${name}"]`);
+        const entityId = field("entity_id").value;
         if (!entityId) return;
-        const label = box.querySelector("#widget-entity-label").value || entityId;
-        const unit = box.querySelector("#widget-entity-unit").value || null;
-        const weatherCheckbox = box.querySelector("#widget-entity-weather");
-        const isWeather = weatherCheckbox ? weatherCheckbox.checked : false;
-        this._addEntity(panel.id, {
-          entity_id: entityId,
-          group,
-          label,
-          unit,
-          type: isWeather ? "weather" : null,
-        });
+        const label = field("label").value || entityId;
+        const unit = field("unit").value || null;
+        const entity = { entity_id: entityId, group, label, unit, type: null };
+        if (group === "wetter") {
+          entity.type = field("weather").checked ? "weather" : null;
+        } else if (group === "aktoren") {
+          entity.type = field("control").value || null;
+          entity.min_value = field("min").value === "" ? null : Number(field("min").value);
+          entity.max_value = field("max").value === "" ? null : Number(field("max").value);
+        }
+        this._addingEntity = false;
+        this._addEntity(panel.id, entity);
       });
     }
   }

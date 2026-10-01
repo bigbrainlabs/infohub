@@ -188,6 +188,9 @@ STRINGS = {
         "tomorrow": "Morgen",
         "in_days": "Tagen",
         "in_minutes": "Minuten",
+        "cover_open": "Auf",
+        "cover_stop": "Stop",
+        "cover_close": "Zu",
     },
     "en": {
         "connecting": "Connecting...",
@@ -218,6 +221,9 @@ STRINGS = {
         "tomorrow": "Tomorrow",
         "in_days": "days",
         "in_minutes": "minutes",
+        "cover_open": "Open",
+        "cover_stop": "Stop",
+        "cover_close": "Close",
     },
 }
 
@@ -3550,18 +3556,20 @@ class InfoHubDisplay:
                 self.status_label.set_style_text_color(
                     lv.color_hex(THEME["error"]), 0)
 
-    def send_action(self, entity_id, command):
+    def send_action(self, entity_id, command, value=None):
         """Sends a {"type": "action", ...} message back to the server -
-        used by switch_tile's tap handler. self._sock is set/cleared by
-        websocket_client() around the connection's lifetime; if we're
-        between connections this is just a no-op (the tap has no effect,
-        matching "no optimistic UI" - see the actuator-widget plan)."""
+        used by switch_tile's tap/drag handlers (toggle, cover buttons,
+        slider release). self._sock is set/cleared by websocket_client()
+        around the connection's lifetime; if we're between connections
+        this is just a no-op (the tap has no effect, matching "no
+        optimistic UI" - see the actuator-widget plan)."""
         if not self._sock:
             return
         try:
-            msg = json.dumps(
-                {"type": "action", "entity_id": entity_id, "command": command}
-            ).encode()
+            payload = {"type": "action", "entity_id": entity_id, "command": command}
+            if value is not None:
+                payload["value"] = value
+            msg = json.dumps(payload).encode()
             self._sock.send(_ws_encode_frame(msg))
         except Exception as e:
             print("Send action error:", e)
@@ -3753,11 +3761,175 @@ class InfoHubDisplay:
         self._position_toggle_paddle(toggle)
         self.send_action(entity_id, "toggle")
 
+    def _create_cover_buttons(self, card, entity_id):
+        """Builds the Auf/Stop/Zu (open/stop/close) button trio for a
+        switch_tile row backed by a cover entity - three small stateless
+        buttons, each sending its own command on tap. No optimistic state
+        (unlike the toggle): a cover's actual state arrives via the next
+        entity_update like everything else, there's nothing useful to
+        flip locally before that."""
+        def make_button(command, symbol):
+            btn = lv.obj(card)
+            btn.set_size(36, 48)
+            btn.set_style_radius(4, 0)
+            btn.set_style_bg_color(lv.color_hex(0x111111), 0)
+            btn.set_style_bg_opa(255, 0)
+            btn.set_style_border_width(2, 0)
+            btn.set_style_border_color(lv.color_hex(0x333333), 0)
+            btn.set_style_pad_all(0, 0)
+            btn.remove_flag(lv.obj.FLAG.SCROLLABLE)
+
+            lbl = lv.label(btn)
+            lbl.set_text(symbol)
+            lbl.set_style_text_color(lv.color_hex(THEME["primary"]), 0)
+            lbl.set_style_text_font(lv.font_montserrat_14, 0)
+            lbl.center()
+
+            btn.add_event_cb(
+                lambda e, eid=entity_id, cmd=command: self.send_action(eid, cmd),
+                lv.EVENT.CLICKED, None)
+            return btn
+
+        return {
+            "open": make_button("open_cover", _t("cover_open")),
+            "stop": make_button("stop_cover", _t("cover_stop")),
+            "close": make_button("close_cover", _t("cover_close")),
+        }
+
+    def _create_value_slider(self, card, rows, entity_id):
+        """Builds the drag-to-set slider for a switch_tile row backed by a
+        number/input_number/light/cover entity (see coordinator.py's
+        _slider_value_and_range()). Tracks a per-row "dragging" flag (via
+        `rows`, looked up fresh on each event rather than captured by
+        closure, since the row dict can be replaced if its control type
+        changes) so a server update arriving mid-drag doesn't yank the
+        knob out from under the user's finger - see update_aktoren()."""
+        slider = lv.slider(card)
+        slider.set_size(100, 14)
+        slider.set_style_bg_color(lv.color_hex(0x333333), lv.PART.MAIN)
+        slider.set_style_bg_opa(255, lv.PART.MAIN)
+        slider.set_style_bg_color(lv.color_hex(THEME["primary"]), lv.PART.INDICATOR)
+        slider.set_style_bg_opa(255, lv.PART.INDICATOR)
+        slider.set_style_bg_color(lv.color_hex(THEME["text"]), lv.PART.KNOB)
+        slider.set_style_bg_opa(255, lv.PART.KNOB)
+
+        value_label = lv.label(card)
+        value_label.set_style_text_color(lv.color_hex(THEME["text"]), 0)
+        value_label.set_style_text_font(lv.font_montserrat_16, 0)
+        value_label.set_text("--")
+
+        def on_pressed(e):
+            row = rows.get(entity_id)
+            if row:
+                row["dragging"] = True
+
+        def on_released(e):
+            row = rows.get(entity_id)
+            if not row:
+                return
+            row["dragging"] = False
+            value = slider.get_value()
+            unit = row.get("_unit", "")
+            value_label.set_text(_safe_text(str(value) + (" " + unit if unit else "")))
+            self.send_action(entity_id, "set_value", value=value)
+
+        slider.add_event_cb(on_pressed, lv.EVENT.PRESSED, None)
+        slider.add_event_cb(on_released, lv.EVENT.RELEASED, None)
+        return slider, value_label
+
+    def _create_aktor_row(self, card, rows, card_w, entity_id, control):
+        """Builds one switch_tile row for `control` ("toggle"/"cover"/
+        "slider") - see update_aktoren()."""
+        label_lbl = lv.label(card)
+        label_lbl.set_style_text_color(lv.color_hex(THEME["text_secondary"]), 0)
+        label_lbl.set_style_text_font(lv.font_montserrat_14, 0)
+        label_lbl.set_width(max(60, card_w - (110 if control == "slider" else 130)))
+
+        if control == "cover":
+            buttons = self._create_cover_buttons(card, entity_id)
+            return {"control": "cover", "label": label_lbl, "buttons": buttons}
+        if control == "slider":
+            slider, value_label = self._create_value_slider(card, rows, entity_id)
+            return {
+                "control": "slider", "label": label_lbl, "slider": slider,
+                "value_label": value_label, "dragging": False, "_unit": "",
+            }
+        toggle = self._create_toggle_switch(card, entity_id)
+        return {"control": "toggle", "label": label_lbl, "switch": toggle}
+
+    def _delete_aktor_row(self, row):
+        """Deletes every LVGL object a switch_tile row owns (see
+        _create_aktor_row()) - used both when an entity drops out of the
+        "aktoren" group and when its control type changes between
+        updates (rare, but cheaper to handle than to special-case away)."""
+        row["label"].delete()
+        control = row["control"]
+        if control == "cover":
+            for btn in row["buttons"].values():
+                btn.delete()
+        elif control == "slider":
+            row["slider"].delete()
+            row["value_label"].delete()
+        else:
+            # Deletes the paddle too (LVGL deletes children along with
+            # their parent).
+            row["switch"]["track"].delete()
+
+    def _position_aktor_row(self, row, row_y, card_w):
+        """Positions one switch_tile row's widgets for this update pass -
+        called every update_aktoren() call, same as the old toggle-only
+        code did, so a card resize (new layout) stays correct."""
+        control = row["control"]
+        if control == "cover":
+            row["label"].set_pos(15, row_y + 20)
+            row["buttons"]["open"].align(lv.ALIGN.TOP_RIGHT, -100, row_y + 11)
+            row["buttons"]["stop"].align(lv.ALIGN.TOP_RIGHT, -60, row_y + 11)
+            row["buttons"]["close"].align(lv.ALIGN.TOP_RIGHT, -20, row_y + 11)
+        elif control == "slider":
+            row["label"].set_pos(15, row_y)
+            row["slider"].set_pos(15, row_y + 34)
+            row["slider"].set_width(max(60, card_w - 110))
+            row["value_label"].align(lv.ALIGN.TOP_RIGHT, -15, row_y)
+        else:
+            row["label"].set_pos(15, row_y + 20)
+            row["switch"]["track"].align(lv.ALIGN.TOP_RIGHT, -20, row_y)
+
+    def _update_aktor_slider(self, row, entity_data):
+        """Applies a slider row's current range/value from entity_data -
+        skipped entirely while the user is actively dragging it (see
+        _create_value_slider()'s "dragging" flag)."""
+        try:
+            min_v = int(round(float(entity_data.get("min", 0) or 0)))
+        except (TypeError, ValueError):
+            min_v = 0
+        try:
+            max_v = int(round(float(entity_data.get("max", 100) or 100)))
+        except (TypeError, ValueError):
+            max_v = 100
+        if max_v <= min_v:
+            max_v = min_v + 1
+        row["slider"].set_range(min_v, max_v)
+
+        try:
+            value = int(round(float(entity_data.get("value"))))
+        except (TypeError, ValueError):
+            value = min_v
+        value = max(min_v, min(max_v, value))
+        row["slider"].set_value(value, lv.ANIM.OFF)
+
+        unit = entity_data.get("unit", "")
+        row["value_label"].set_text(_safe_text(str(value) + (" " + unit if unit else "")))
+
     def update_aktoren(self, data):
         """Updates every switch_tile widget from the shared "aktoren"
         group - same on-demand row lifecycle as update_custom(), but each
-        row's "switch" is a custom toggle (see _create_toggle_switch())
-        instead of a read-only label.
+        row renders as one of three controls depending on the entity's
+        server-sent "control" field (default "toggle" for older/unset
+        data): a tappable rocker switch, an Auf/Stop/Zu button trio
+        (control="cover"), or a drag-to-set slider (control="slider",
+        range from "min"/"max") - see coordinator.py's
+        _async_transform_state() for how that's derived per entity
+        domain.
         """
         try:
             # Taller than value_tile's rows (34px) and than the old
@@ -3772,31 +3944,34 @@ class InfoHubDisplay:
 
                 for entity_id in list(rows.keys()):
                     if entity_id not in data:
-                        rows[entity_id]["label"].delete()
-                        # Deletes the paddle too (LVGL deletes children
-                        # along with their parent).
-                        rows[entity_id]["switch"]["track"].delete()
-                        del rows[entity_id]
+                        self._delete_aktor_row(rows.pop(entity_id))
 
                 for i, (entity_id, entity_data) in enumerate(items):
                     row_y = CARD_CONTENT_TOP + i * row_h
-                    if entity_id not in rows:
-                        label_lbl = lv.label(card)
-                        label_lbl.set_style_text_color(
-                            lv.color_hex(THEME["text_secondary"]), 0)
-                        label_lbl.set_style_text_font(lv.font_montserrat_14, 0)
-                        label_lbl.set_width(max(60, card_w - 130))
-                        toggle = self._create_toggle_switch(card, entity_id)
-                        rows[entity_id] = {"label": label_lbl, "switch": toggle}
-                    row = rows[entity_id]
-                    row["label"].set_pos(15, row_y + 20)
-                    row["switch"]["track"].align(lv.ALIGN.TOP_RIGHT, -20, row_y)
+                    control = entity_data.get("control") or "toggle"
 
+                    row = rows.get(entity_id)
+                    if row is not None and row["control"] != control:
+                        self._delete_aktor_row(row)
+                        row = None
+                    if row is None:
+                        row = self._create_aktor_row(card, rows, card_w, entity_id, control)
+                        rows[entity_id] = row
+
+                    self._position_aktor_row(row, row_y, card_w)
                     label_text = entity_data.get("label", entity_id)
-                    state = str(entity_data.get("state", "")).lower()
                     row["label"].set_text(_safe_text(str(label_text)))
-                    row["switch"]["state"] = state == "on"
-                    self._position_toggle_paddle(row["switch"])
+
+                    if control == "cover":
+                        pass  # stateless buttons, nothing to reflect
+                    elif control == "slider":
+                        row["_unit"] = entity_data.get("unit", "")
+                        if not row.get("dragging"):
+                            self._update_aktor_slider(row, entity_data)
+                    else:
+                        state = str(entity_data.get("state", "")).lower()
+                        row["switch"]["state"] = state == "on"
+                        self._position_toggle_paddle(row["switch"])
         except Exception as e:
             print("Aktoren update error:", e)
 

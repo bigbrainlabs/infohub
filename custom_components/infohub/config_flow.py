@@ -66,7 +66,9 @@ class InfoHubOptionsFlow(config_entries.OptionsFlow):
     """
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self.config_entry = config_entry
+        # Newer HA core versions expose OptionsFlow.config_entry as a
+        # read-only property set by the framework itself - assigning it
+        # here raises AttributeError ("no setter").
         self._ws_port: int = config_entry.options.get(
             CONF_WS_PORT, config_entry.data.get(CONF_WS_PORT, DEFAULT_WS_PORT)
         )
@@ -75,7 +77,13 @@ class InfoHubOptionsFlow(config_entries.OptionsFlow):
         self._gts_poll_interval: int = config_entry.options.get(
             CONF_GTS_POLL_INTERVAL, DEFAULT_GTS_POLL_INTERVAL
         )
-        self._calendar_entity_id: str = config_entry.options.get(CONF_CALENDAR_ENTITY_ID, "") or ""
+        # CONF_CALENDAR_ENTITY_ID now stores a list (multiple calendars,
+        # merged by the coordinator) - a lone leftover string from before
+        # multi-select existed is read as a one-item list.
+        raw_calendar = config_entry.options.get(CONF_CALENDAR_ENTITY_ID)
+        self._calendar_entity_ids: list[str] = (
+            raw_calendar if isinstance(raw_calendar, list) else ([raw_calendar] if raw_calendar else [])
+        )
         self._calendar_poll_interval: int = config_entry.options.get(
             CONF_CALENDAR_POLL_INTERVAL, DEFAULT_CALENDAR_POLL_INTERVAL
         )
@@ -88,7 +96,7 @@ class InfoHubOptionsFlow(config_entries.OptionsFlow):
             self._gts_plz = user_input.get(CONF_GTS_PLZ) or ""
             self._gts_country = user_input[CONF_GTS_COUNTRY]
             self._gts_poll_interval = user_input[CONF_GTS_POLL_INTERVAL]
-            self._calendar_entity_id = user_input.get(CONF_CALENDAR_ENTITY_ID) or ""
+            self._calendar_entity_ids = user_input.get(CONF_CALENDAR_ENTITY_ID) or []
             self._calendar_poll_interval = user_input[CONF_CALENDAR_POLL_INTERVAL]
             return self.async_create_entry(
                 title="",
@@ -97,7 +105,7 @@ class InfoHubOptionsFlow(config_entries.OptionsFlow):
                     CONF_GTS_PLZ: self._gts_plz,
                     CONF_GTS_COUNTRY: self._gts_country,
                     CONF_GTS_POLL_INTERVAL: self._gts_poll_interval,
-                    CONF_CALENDAR_ENTITY_ID: self._calendar_entity_id,
+                    CONF_CALENDAR_ENTITY_ID: self._calendar_entity_ids,
                     CONF_CALENDAR_POLL_INTERVAL: self._calendar_poll_interval,
                 },
             )
@@ -109,8 +117,8 @@ class InfoHubOptionsFlow(config_entries.OptionsFlow):
                 vol.Required(CONF_GTS_COUNTRY, default=self._gts_country): TextSelector(),
                 vol.Required(CONF_GTS_POLL_INTERVAL, default=self._gts_poll_interval): int,
                 vol.Optional(
-                    CONF_CALENDAR_ENTITY_ID, default=self._calendar_entity_id
-                ): EntitySelector(EntitySelectorConfig(domain="calendar")),
+                    CONF_CALENDAR_ENTITY_ID, default=self._calendar_entity_ids
+                ): EntitySelector(EntitySelectorConfig(domain="calendar", multiple=True)),
                 vol.Required(
                     CONF_CALENDAR_POLL_INTERVAL, default=self._calendar_poll_interval
                 ): int,

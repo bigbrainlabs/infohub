@@ -17,13 +17,13 @@
     "step": {
       "init": {
         "title": "InfoHub-Einstellungen",
-        "description": "Entities und Screens je Display werden jetzt über das InfoHub-Panel in der Seitenleiste verwaltet. GTS-PLZ bzw. Kalender-Entity leer lassen, um die jeweilige Abfrage zu deaktivieren.",
+        "description": "Entities und Screens je Display werden jetzt über das InfoHub-Panel in der Seitenleiste verwaltet. GTS-PLZ leer lassen bzw. keine Kalender-Entity auswählen, um die jeweilige Abfrage zu deaktivieren.",
         "data": {
           "ws_port": "WebSocket-Port",
           "gts_plz": "GTS-PLZ",
           "gts_country": "GTS-Land",
           "gts_poll_interval": "GTS-Abfrageintervall (Sekunden)",
-          "calendar_entity_id": "Google-Kalender-Entity",
+          "calendar_entity_id": "Google-Kalender-Entities",
           "calendar_poll_interval": "Kalender-Abfrageintervall (Sekunden)"
         }
       }

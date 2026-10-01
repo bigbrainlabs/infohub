@@ -47,6 +47,7 @@ from .const import (
     DEFAULT_CALENDAR_POLL_INTERVAL,
     DEFAULT_GTS_COUNTRY,
     DEFAULT_GTS_POLL_INTERVAL,
+    GROUP_AKTOREN,
     GROUP_KALENDER,
     GROUP_WETTER,
     GTS_API_URL,
@@ -68,7 +69,7 @@ class InfoHubCoordinator:
         gts_plz: str | None = None,
         gts_country: str = DEFAULT_GTS_COUNTRY,
         gts_poll_interval: int = DEFAULT_GTS_POLL_INTERVAL,
-        calendar_entity_id: str | None = None,
+        calendar_entity_ids: list[str] | None = None,
         calendar_poll_interval: int = DEFAULT_CALENDAR_POLL_INTERVAL,
     ) -> None:
         self._hass = hass
@@ -78,7 +79,9 @@ class InfoHubCoordinator:
         self._gts_country = gts_country
         self._gts_poll_interval = gts_poll_interval
         self._gts_value: float | None = None
-        self._calendar_entity_id = calendar_entity_id
+        # Multiple calendars are merged into one event list - see
+        # _async_poll_calendar(). A single calendar is just the n=1 case.
+        self._calendar_entity_ids = calendar_entity_ids or []
         self._calendar_poll_interval = calendar_poll_interval
         self._unsub_state_changes: list[callable] = []
         self._unsub_gts_timer: callable | None = None
@@ -105,7 +108,7 @@ class InfoHubCoordinator:
                 self._gts_plz, self._gts_country, self._gts_poll_interval,
             )
 
-        if self._calendar_entity_id:
+        if self._calendar_entity_ids:
             await self._async_poll_calendar()
             self._unsub_calendar_timer = async_track_time_interval(
                 self._hass, self._async_poll_calendar,
@@ -113,7 +116,7 @@ class InfoHubCoordinator:
             )
             logger.info(
                 "Kalender-Abfrage aktiv: %s, alle %ds",
-                self._calendar_entity_id, self._calendar_poll_interval,
+                ", ".join(self._calendar_entity_ids), self._calendar_poll_interval,
             )
 
     def async_stop(self) -> None:
@@ -170,7 +173,7 @@ class InfoHubCoordinator:
                 continue
 
             group, entity_config = find_entity_config(entity_id, self._entity_groups)
-            transformed = await self._async_transform_state(state, entity_config)
+            transformed = await self._async_transform_state(state, entity_config, group)
             data.setdefault(group, {})[entity_id] = transformed
 
         await self._server.broadcast_full_update(data)
@@ -194,11 +197,11 @@ class InfoHubCoordinator:
     async def _async_broadcast_entity_change(
         self, group: str, state: State, entity_config: EntityConfig
     ) -> None:
-        transformed = await self._async_transform_state(state, entity_config)
+        transformed = await self._async_transform_state(state, entity_config, group)
         await self._server.broadcast_entity_update(group, state.entity_id, transformed)
 
     async def _async_transform_state(
-        self, state: State, entity_config: EntityConfig
+        self, state: State, entity_config: EntityConfig, group: str | None = None
     ) -> dict[str, Any]:
         """Transforms a HA State into the InfoHub wire format (see websocket_server.py)."""
         transformed: dict[str, Any] = {
@@ -207,6 +210,25 @@ class InfoHubCoordinator:
         }
         if entity_config.unit:
             transformed["unit"] = entity_config.unit
+
+        if group == GROUP_AKTOREN:
+            # Which actuator control the client should render this row as -
+            # see EntityConfig.type's docstring. "slider" additionally
+            # needs a current value and range, derived per HA domain since
+            # neither lives in a uniform place (state.state for
+            # number/input_number, an attribute for light/cover).
+            control = entity_config.type if entity_config.type in ("cover", "slider") else "toggle"
+            transformed["control"] = control
+            if control == "slider":
+                domain = state.entity_id.split(".", 1)[0]
+                value, attr_min, attr_max = _slider_value_and_range(domain, state)
+                transformed["value"] = value
+                transformed["min"] = (
+                    entity_config.min_value if entity_config.min_value is not None else attr_min
+                )
+                transformed["max"] = (
+                    entity_config.max_value if entity_config.max_value is not None else attr_max
+                )
 
         if entity_config.type == "weather":
             transformed["attributes"] = dict(state.attributes)
@@ -286,7 +308,7 @@ class InfoHubCoordinator:
             state = self._hass.states.get(entity_config.entity_id)
             if state is None:
                 continue
-            transformed = await self._async_transform_state(state, entity_config)
+            transformed = await self._async_transform_state(state, entity_config, GROUP_WETTER)
             await self._server.broadcast_entity_update(
                 GROUP_WETTER, entity_config.entity_id, transformed
             )
@@ -296,6 +318,12 @@ class InfoHubCoordinator:
 
         `now` is unused - async_track_time_interval passes the trigger time,
         but this also gets called once directly on startup without it.
+        One service call targets every configured calendar at once -
+        calendar.get_events returns its response keyed by entity_id when
+        targeting more than one, same shape as the single-calendar case
+        just with more keys - and the merged result is sorted back into
+        one chronological list, since multiple calendars' events don't
+        arrive in a globally sorted order.
         """
         today = datetime.now()
         start = datetime(today.year, today.month, 1)
@@ -310,7 +338,7 @@ class InfoHubCoordinator:
                 "calendar",
                 "get_events",
                 {
-                    "entity_id": self._calendar_entity_id,
+                    "entity_id": self._calendar_entity_ids,
                     "start_date_time": start.isoformat(),
                     "end_date_time": end.isoformat(),
                 },
@@ -321,8 +349,12 @@ class InfoHubCoordinator:
             logger.error("Kalender-Abruf fehlgeschlagen: %s", err)
             return
 
-        raw_events = (response or {}).get(self._calendar_entity_id, {}).get("events", [])
-        events = [e for e in (self._parse_event(raw) for raw in raw_events) if e is not None]
+        response = response or {}
+        events = []
+        for entity_id in self._calendar_entity_ids:
+            raw_events = response.get(entity_id, {}).get("events", [])
+            events.extend(e for e in (self._parse_event(raw) for raw in raw_events) if e is not None)
+        events.sort(key=lambda e: e["start"])
 
         await self._server.broadcast_group_update(GROUP_KALENDER, {"events": events})
         logger.info("Kalender-Update: %d Events gesendet", len(events))
@@ -343,6 +375,31 @@ class InfoHubCoordinator:
             "end": end_str,
             "all_day": all_day,
         }
+
+
+def _slider_value_and_range(
+    domain: str, state: State
+) -> tuple[float | None, float | None, float | None]:
+    """Reads a "slider" actuator's current value and default range for its
+    HA domain - number/input_number expose min/max as state attributes
+    natively, so those are read straight off the state; light (brightness)
+    and cover (position) don't, so those default to a 0-100 percent range,
+    overridable per-entity via EntityConfig.min_value/max_value.
+    """
+    attrs = state.attributes
+    if domain in ("number", "input_number"):
+        try:
+            value = float(state.state)
+        except (TypeError, ValueError):
+            value = None
+        return value, attrs.get("min"), attrs.get("max")
+    if domain == "light":
+        brightness = attrs.get("brightness")
+        value = round(brightness / 255 * 100) if brightness is not None else 0
+        return value, 0, 100
+    if domain == "cover":
+        return attrs.get("current_position"), 0, 100
+    return None, None, None
 
 
 def _normalize_event_datetime(value: Any) -> tuple[str, bool]:

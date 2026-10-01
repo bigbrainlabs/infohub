@@ -53,9 +53,11 @@ Home Assistant
 - **Widgets**: clock, current weather (with an animated day/night sky
   scene), power gauge, indoor climate, next waste collection, calendar
   month, an Info Tile (shows any entities you assign it, one per row),
-  and Switches (same idea, but tappable toggles for controllable
-  entities) - each with its own per-widget options (clock
-  format/seconds, weather scene on/off, gauge max value, months shown).
+  and Switches (same idea, but each row is a tappable toggle, an
+  Auf/Stop/Zu button trio for covers, or a drag-to-set slider with
+  configurable min/max, picked per entity) - each with its own
+  per-widget options (clock format/seconds, weather scene on/off, gauge
+  max value, months shown).
 - **Multiple panels, multiple displays**: define as many named panel
   layouts as you like and assign each physical display to one via a
   dropdown, keyed off a stable per-device ID.

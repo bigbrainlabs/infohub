@@ -17,13 +17,13 @@
     "step": {
       "init": {
         "title": "InfoHub settings",
-        "description": "Entities and screens per display are now managed via the InfoHub panel in the sidebar. Leave the GTS postal code or the calendar entity empty to disable that lookup.",
+        "description": "Entities and screens per display are now managed via the InfoHub panel in the sidebar. Leave the GTS postal code or the calendar entities empty to disable that lookup.",
         "data": {
           "ws_port": "WebSocket port",
           "gts_plz": "GTS postal code",
           "gts_country": "GTS country",
           "gts_poll_interval": "GTS poll interval (seconds)",
-          "calendar_entity_id": "Google Calendar entity",
+          "calendar_entity_id": "Google Calendar entities",
           "calendar_poll_interval": "Calendar poll interval (seconds)"
         }
       }

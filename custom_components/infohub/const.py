@@ -42,9 +42,10 @@ GROUP_KALENDER = "kalender"
 # per-instance selection (see layout.py/widgets.py).
 GROUP_CUSTOM = "custom"
 # Backing group for the "switch_tile" widget type - same one-row-per-
-# entity rendering as GROUP_CUSTOM, but each row is a tappable toggle
-# instead of a read-only value (see websocket_server.py's action
-# handling and the client's update_aktoren()).
+# entity rendering as GROUP_CUSTOM, but each row is a tappable toggle,
+# cover (Auf/Stop/Zu) button trio, or slider instead of a read-only
+# value (see websocket_server.py's action handling and the client's
+# update_aktoren()).
 GROUP_AKTOREN = "aktoren"
 
 # Per-panel display language - controls what's actually rendered on the

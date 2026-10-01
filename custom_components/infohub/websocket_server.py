@@ -13,14 +13,18 @@ Sends two independent message streams to connected clients:
   groups a given display's layout doesn't use are simply unused there).
 
 Also accepts one message type *from* clients: `{"type": "action",
-"entity_id": ..., "command": "toggle"}` (see _handle_client_message()),
-for actuator widgets (switch_tile) - the display taps a switch, this
-server hands it to an injected handler (configure_action_handler()) that
-the integration wires up to allowlist-check it and call a Home Assistant
-service. This is the one place the "clients need no HA auth" design
-(below) has a real consequence: anything reachable on this port can send
-one, bounded only by the allowlist - see the actuator-widget plan's
-"Bekannte offene Punkte" for the known gap.
+"entity_id": ..., "command": ..., "value": ...}` (see
+_handle_client_message()), for actuator widgets (switch_tile) - the
+display taps a switch/cover button or releases a slider, this server
+hands it to an injected handler (configure_action_handler()) that the
+integration wires up to allowlist-check it and call a Home Assistant
+service. `command` is one of "toggle", "open_cover"/"stop_cover"/
+"close_cover", or "set_value" (with a numeric `value`) - see
+__init__.py's _resolve_action() for the per-domain service dispatch.
+This is the one place the "clients need no HA auth" design (below) has a
+real consequence: anything reachable on this port can send one, bounded
+only by the allowlist - see the actuator-widget plan's "Bekannte offene
+Punkte" for the known gap.
 
 Runs as its own asyncio server on its own port (not embedded in Home
 Assistant's HTTP server), so display clients need no HA auth/session
@@ -52,11 +56,12 @@ logger = logging.getLogger(__name__)
 HELLO_TIMEOUT = 2.0
 
 ResolvePanelFn = Callable[[str | None], "str | None"]
-# (entity_id, command) -> None. The integration (__init__.py) injects one
+# (entity_id, command, value) -> None. `value` is only meaningful for
+# "set_value" (None otherwise). The integration (__init__.py) injects one
 # that allowlist-checks entity_id against configured "aktoren" entities
 # before calling any Home Assistant service - this server only parses the
 # wire message and hands it off, it has no opinion on what's allowed.
-ActionHandlerFn = Callable[[str, str], Awaitable[None]]
+ActionHandlerFn = Callable[[str, str, "float | None"], Awaitable[None]]
 
 
 class InfoHubWebSocketServer:
@@ -188,11 +193,11 @@ class InfoHubWebSocketServer:
     async def _handle_client_message(self, client_addr: Any, message: str) -> None:
         """Handles one message from an already-connected client.
 
-        Only `{"type": "action", "entity_id": ..., "command": "toggle"}` is
-        currently understood - a closed vocabulary on purpose, not a
-        generic service-call passthrough (see __init__.py's allowlist
-        check in the injected handler). Anything else is just logged, same
-        as before this existed.
+        Only `{"type": "action", "entity_id": ..., "command": ...,
+        "value": ...}` is currently understood - a closed vocabulary on
+        purpose, not a generic service-call passthrough (see __init__.py's
+        allowlist check and command dispatch in the injected handler).
+        Anything else is just logged, same as before this existed.
         """
         try:
             data = json.loads(message)
@@ -206,6 +211,7 @@ class InfoHubWebSocketServer:
 
         entity_id = data.get("entity_id")
         command = data.get("command")
+        value = data.get("value")
         if not entity_id or not command:
             logger.warning("Unvollstaendige Action von %s: %s", client_addr, data)
             return
@@ -213,8 +219,8 @@ class InfoHubWebSocketServer:
             logger.warning("Action von %s erhalten, aber kein Handler konfiguriert", client_addr)
             return
 
-        logger.info("Action von %s: %s %s", client_addr, command, entity_id)
-        await self._on_action(entity_id, command)
+        logger.info("Action von %s: %s %s (value=%s)", client_addr, command, entity_id, value)
+        await self._on_action(entity_id, command, value)
 
     def _layout_for_device(self, device_id: str | None) -> Layout | None:
         panel_id = self._resolve_panel(device_id) if self._resolve_panel else None

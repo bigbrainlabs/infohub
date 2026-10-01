@@ -33,9 +33,12 @@ WIDGET_CALENDAR_MONTH = "calendar_month"
 # itself, not a per-widget option.
 WIDGET_VALUE_TILE = "value_tile"
 # Same one-row-per-entity idea as value_tile, but for the "aktoren"
-# group (const.GROUP_AKTOREN) and each row is a tappable toggle instead
-# of a read-only value - the first (and so far only) actuator/control
-# widget type. See websocket_server.py's action handling.
+# group (const.GROUP_AKTOREN); each row is one of three tappable/
+# draggable controls instead of a read-only value - a toggle, an
+# Auf/Stop/Zu (open/stop/close) button trio for covers, or a slider with
+# configurable min/max - picked per-entity via EntityConfig.type (see
+# entities.py), not a per-widget option. See websocket_server.py's
+# action handling and coordinator.py's _async_transform_state().
 WIDGET_SWITCH_TILE = "switch_tile"
 
 # Bilingual widget display names - keyed by wire language code ("de"/"en",
