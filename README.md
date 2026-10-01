@@ -64,12 +64,17 @@ Home Assistant
 - **Push-based data**: entity changes are read straight from
   `hass.states` and pushed live - no REST polling loop.
 - **Google Calendar** via Home Assistant's own Google Calendar
-  integration (`calendar.get_events`), plus an external GTS API poller
-  for gardeners.
+  integration (`calendar.get_events`) - pick one or more calendars in
+  the Configure dialog, their events are merged into one list - plus
+  an external GTS API poller for gardeners.
 
 ## Requirements
 
-- Home Assistant 2024.1 or newer.
+- Home Assistant 2024.11 or newer - developed and tested against
+  2026.1. The options flow relies on `OptionsFlow.config_entry` being
+  set automatically by HA core, which only started in 2024.11 (the old
+  manual `self.config_entry = config_entry` pattern was deprecated from
+  then and started raising `AttributeError` outright as of 2025.12).
 - A display client: the reference implementation
   (`display-client/main_mp.py`) targets a Linux-hosted MicroPython+LVGL
   build (framebuffer + evdev touch) - see
@@ -79,6 +84,8 @@ Home Assistant
   build) can implement it instead.
 
 ## Installation
+
+### Home Assistant integration
 
 1. Copy `custom_components/infohub` into your Home Assistant
    `config/custom_components/` directory (or install via HACS as a
@@ -90,11 +97,35 @@ Home Assistant
 4. A new **InfoHub** entry appears in the sidebar. Use it to create one
    or more Panels: pick the entities each panel should track, and lay
    out widgets on the grid editor.
-5. Point your display client at `ws://<home-assistant-host>:<ws_port>`.
 
-Further per-instance options (GTS postcode/country, the Google Calendar
-entity to poll, poll intervals) are under the integration's own
-**Configure** dialog.
+Further per-instance options are under the integration's own
+**Configure** dialog: the WebSocket port, GTS postcode/country, and
+which Google Calendar entity/entities to poll (multi-select - requires
+Home Assistant's own Google Calendar integration to already be set up,
+InfoHub just reads the `calendar.*` entities that creates).
+
+### Display client
+
+The reference client (`display-client/main_mp.py`) needs a MicroPython
+build with LVGL compiled in - not something you `pip install` or flash
+as-is. Short version (see
+[`display-client/README.md`](display-client/README.md) for the full
+walkthrough: building the runtime, hardware wiring, systemd unit):
+
+1. Build (or obtain) a MicroPython+LVGL binary for your board - see
+   that README's "Building the MicroPython + LVGL runtime" section.
+2. Edit the constants at the top of `main_mp.py` - `INFOHUB_HOST`/
+   `INFOHUB_PORT` to point at your Home Assistant instance and the
+   WebSocket port from step 3 above, `DISPLAY_WIDTH`/`DISPLAY_HEIGHT`
+   for your panel.
+3. Deploy `main_mp.py` alongside the binary onto the display device
+   and run it (a systemd unit example is in the display client's
+   README, for restart-on-boot/crash).
+4. The client identifies itself by hostname (`DEVICE_ID`, from
+   `os.uname().nodename`) in its first `hello` message. Once it's
+   connected at least once, it shows up in the InfoHub sidebar panel's
+   device dropdown - assign it a specific Panel there, or leave it
+   unassigned to get the default panel.
 
 ## Wire protocol (short version)
 
@@ -116,9 +147,12 @@ Live data then streams as `full_update` (initial snapshot / bulk
 changes) and `entity_update` (single-entity changes), grouped by the
 same group keys (`wetter`, `strom`, `abfall`, `raumklima`, `kalender`,
 plus `custom` and `aktoren` for the Info Tile and Switches widgets)
-used in the layout's `data_source` fields. Switches also accept an
-`action` message from the client to toggle an entity - see
-`websocket_server.py`.
+used in the layout's `data_source` fields. Switches also send an
+`action` message back to the server - `{"type": "action", "entity_id":
+..., "command": ..., "value": ...}`, with `command` one of `toggle`,
+`open_cover`/`stop_cover`/`close_cover`, or `set_value` (with a numeric
+`value`) - see `websocket_server.py` and `__init__.py`'s service
+dispatch.
 
 ## License
 
