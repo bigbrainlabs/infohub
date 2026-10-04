@@ -231,7 +231,12 @@ class InfohubPanel extends HTMLElement {
     this._selectedId = null;
     this._selectedWidgetId = null;
     this._unsubPromise = null;
-    this._subscribed = false;
+    // The hass.connection object we last subscribed on - not just a
+    // boolean "have we ever subscribed" flag, because that alone can't
+    // detect HA swapping in a *new* connection object (reconnect after
+    // a dropped websocket, token re-auth, etc.) while this element stays
+    // mounted/visible the whole time - see the `hass` setter.
+    this._subscribedConnection = null;
     // UI-only state for the entity list's expand-to-edit rows (see
     // _renderEntityList()) - never persisted, reset whenever the
     // selected widget changes so a stale index can't leak across widgets.
@@ -242,8 +247,13 @@ class InfohubPanel extends HTMLElement {
   set hass(hass) {
     const prevLang = this._lang();
     this._hass = hass;
-    if (!this._subscribed) {
-      this._subscribed = true;
+    if (this._subscribedConnection !== hass.connection) {
+      // Either the very first hass we've seen, or HA handed us a
+      // different connection object than the one we subscribed on -
+      // re-subscribe either way. (When it's the *same* connection
+      // object reconnecting internally, home-assistant-js-websocket
+      // already replays the existing subscription on its own - this
+      // branch only needs to catch an outright swapped connection.)
       this._subscribe();
     } else if (this._lang() !== prevLang) {
       // HA-Sprache kann sich zur Laufzeit aendern (z.B. Benutzerwechsel) -
@@ -272,17 +282,39 @@ class InfohubPanel extends HTMLElement {
   }
 
   disconnectedCallback() {
+    // Clears _subscribedConnection too, not just the subscription itself
+    // - otherwise the `hass` setter's identity check would keep thinking
+    // we're subscribed once this element is reconnected (HA's sidebar
+    // navigation disconnects/reconnects panel elements rather than
+    // destroying them), so it'd never resubscribe and the panel would
+    // stay stuck on whatever it last had until a full page reload
+    // created a fresh element.
     if (this._unsubPromise) {
       this._unsubPromise.then((unsub) => unsub && unsub());
       this._unsubPromise = null;
     }
+    this._subscribedConnection = null;
   }
 
   _subscribe() {
-    this._unsubPromise = this._hass.connection.subscribeMessage(
-      (updates) => this._handleUpdates(updates),
-      { type: "infohub/panel/subscribe" }
-    );
+    const connection = this._hass.connection;
+    this._subscribedConnection = connection;
+    this._unsubPromise = connection
+      .subscribeMessage((updates) => this._handleUpdates(updates), {
+        type: "infohub/panel/subscribe",
+      })
+      .catch((err) => {
+        // A failed subscribe attempt (e.g. the connection was mid-
+        // reconnect at that exact moment) must not leave
+        // _subscribedConnection pointing at a connection with no live
+        // subscription on it - clear it (unless a newer _subscribe()
+        // call already moved on) so the next hass update retries.
+        console.error("InfoHub: panel subscribe failed", err);
+        if (this._subscribedConnection === connection) {
+          this._subscribedConnection = null;
+        }
+        return null;
+      });
   }
 
   _handleUpdates(updates) {
