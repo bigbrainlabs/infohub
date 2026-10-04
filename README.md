@@ -1,5 +1,8 @@
 # InfoHub
 
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/bigbrainlabs?style=flat&logo=github&label=Sponsor&color=pink)](https://github.com/sponsors/bigbrainlabs)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support-yellow?style=flat&logo=buy-me-a-coffee&logoColor=white)](https://www.buymeacoffee.com/bigbrain20u)
+
 A Home Assistant custom integration that turns a Raspberry Pi (or similar
 Linux-capable board) with a touch display into a fully server-configured
 smart-home info panel - clock, weather, power usage, waste-collection
@@ -153,6 +156,14 @@ used in the layout's `data_source` fields. Switches also send an
 `open_cover`/`stop_cover`/`close_cover`, or `set_value` (with a numeric
 `value`) - see `websocket_server.py` and `__init__.py`'s service
 dispatch.
+
+## Support
+
+Free, open source, built on weekends/evenings next to an actual job. If
+InfoHub saves you from fighting a Lovelace kiosk dashboard, a coffee is
+very welcome: [GitHub Sponsors](https://github.com/sponsors/bigbrainlabs)
+or [Buy Me a Coffee](https://www.buymeacoffee.com/bigbrain20u). Totally
+optional, but it does keep the next feature coming 🙂
 
 ## License
 
